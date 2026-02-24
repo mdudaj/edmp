@@ -95,10 +95,16 @@ def asset_detail(request, asset_id: str):
         if payload is None:
             return JsonResponse({'error': 'invalid_json'}, status=400)
 
+        if 'asset_type' in payload and payload.get('asset_type') != asset.asset_type:
+            return JsonResponse({'error': 'asset_type is immutable'}, status=400)
+
         asset.display_name = payload.get('display_name') or asset.display_name
-        asset.asset_type = payload.get('asset_type') or asset.asset_type
         if 'properties' in payload:
-            asset.properties = payload.get('properties') or {}
+            props = payload.get('properties')
+            if props is None:
+                asset.properties = {}
+            else:
+                asset.properties = {**(asset.properties or {}), **(props or {})}
         asset.save()
         return JsonResponse(_asset_to_dict(asset))
 

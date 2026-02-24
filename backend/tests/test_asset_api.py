@@ -67,3 +67,11 @@ def test_asset_update_roundtrip():
     assert resp.status_code == 200
     assert resp.json()['display_name'] == 'Table'
     assert resp.json()['properties']['owner'] == 'data-team'
+
+    cannot_change_type = client.put(
+        f"/api/v1/assets/{created['id']}",
+        data=json.dumps({'asset_type': 'view'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+    )
+    assert cannot_change_type.status_code == 400
