@@ -10,6 +10,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from .events import maybe_publish_event
+from .identity import require_role
 from .models import DataAsset, IngestionRequest, LineageEdge
 
 
@@ -113,6 +114,9 @@ def _parse_int_clamped(value: str | None, *, default: int, min_value: int, max_v
 def ingestions(request):
     """Create tenant-scoped ingestion requests."""
     if request.method == 'POST':
+        forbidden = require_role(request, 'catalog.editor')
+        if forbidden:
+            return forbidden
         payload = _parse_json_body(request)
         if payload is None:
             return JsonResponse({'error': 'invalid_json'}, status=400)
@@ -177,6 +181,9 @@ def assets(request):
         return JsonResponse({'items': items})
 
     if request.method == 'POST':
+        forbidden = require_role(request, 'catalog.editor')
+        if forbidden:
+            return forbidden
         payload = _parse_json_body(request)
         if payload is None:
             return JsonResponse({'error': 'invalid_json'}, status=400)
@@ -234,6 +241,9 @@ def asset_detail(request, asset_id: str):
         return JsonResponse(_asset_to_dict(asset))
 
     if request.method == 'PUT':
+        forbidden = require_role(request, 'catalog.editor')
+        if forbidden:
+            return forbidden
         payload = _parse_json_body(request)
         if payload is None:
             return JsonResponse({'error': 'invalid_json'}, status=400)
@@ -297,6 +307,9 @@ def asset_detail(request, asset_id: str):
 def lineage_edges(request):
     """Tenant-scoped lineage edge upsert/query."""
     if request.method == 'POST':
+        forbidden = require_role(request, 'catalog.editor')
+        if forbidden:
+            return forbidden
         payload = _parse_json_body(request)
         if payload is None:
             return JsonResponse({'error': 'invalid_json'}, status=400)
