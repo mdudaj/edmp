@@ -13,6 +13,7 @@ tags:
   - name: probes
   - name: tenants
   - name: assets
+  - name: ingestions
 paths:
   /healthz:
     get:
@@ -242,6 +243,62 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/ingestions:
+    post:
+      tags: [ingestions]
+      summary: Create an ingestion request (tenant-scoped)
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/XUserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIngestionRequest'
+      responses:
+        '201':
+          description: Ingestion request created
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionRequest'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/ingestions/{ingestion_id}:
+    parameters:
+      - name: ingestion_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [ingestions]
+      summary: Get ingestion request status (tenant-scoped)
+      responses:
+        '200':
+          description: Ingestion request
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionRequest'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   parameters:
     XCorrelationId:
@@ -362,3 +419,40 @@ components:
           type: object
           nullable: true
           additionalProperties: true
+    IngestionRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        connector:
+          type: string
+          example: dbt
+        source:
+          type: object
+          additionalProperties: true
+        mode:
+          type: string
+          nullable: true
+          example: snapshot
+        status:
+          type: string
+          example: queued
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, connector, source, status, created_at, updated_at]
+    CreateIngestionRequest:
+      type: object
+      properties:
+        connector:
+          type: string
+        source:
+          type: object
+          additionalProperties: true
+        mode:
+          type: string
+      required: [connector, source]

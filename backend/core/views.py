@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from .events import maybe_publish_event
-from .models import DataAsset
+from .models import DataAsset, IngestionRequest
 
 
 def _tenant_schema(request) -> str:
@@ -59,6 +59,66 @@ def _parse_json_body(request):
         return json.loads(body or '{}')
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
+
+
+def _ingestion_to_dict(ing: IngestionRequest) -> dict[str, Any]:
+    return {
+        'id': str(ing.id),
+        'connector': ing.connector,
+        'source': ing.source,
+        'mode': ing.mode if ing.mode else None,
+        'status': ing.status,
+        'created_at': ing.created_at.isoformat(),
+        'updated_at': ing.updated_at.isoformat(),
+    }
+
+
+@csrf_exempt
+def ingestions(request):
+    """Create tenant-scoped ingestion requests."""
+    if request.method == 'POST':
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+
+        connector = payload.get('connector')
+        source = payload.get('source')
+        if not connector:
+            return JsonResponse({'error': 'connector is required'}, status=400)
+        if source is None or not isinstance(source, dict):
+            return JsonResponse({'error': 'source must be an object'}, status=400)
+
+        ing = IngestionRequest.objects.create(
+            connector=connector,
+            source=source,
+            mode=payload.get('mode') or '',
+        )
+        tenant_schema = _tenant_schema(request)
+        maybe_publish_event(
+            event_type='ingestion.created',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.ingestion.created',
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_ingestion_to_dict(ing),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        return JsonResponse(_ingestion_to_dict(ing), status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def ingestion_detail(request, ingestion_id: str):
+    try:
+        ing = IngestionRequest.objects.get(id=ingestion_id)
+    except IngestionRequest.DoesNotExist:
+        return JsonResponse({'error': 'not_found'}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse(_ingestion_to_dict(ing))
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
 
 
 @csrf_exempt
