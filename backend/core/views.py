@@ -1,14 +1,16 @@
 import json
 import os
+import uuid
 from typing import Any
 
+from django.core.exceptions import ValidationError
 from django.db import connection
 from django.db.utils import DatabaseError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from .events import maybe_publish_event
-from .models import DataAsset, IngestionRequest
+from .models import DataAsset, IngestionRequest, LineageEdge
 
 
 def _tenant_schema(request) -> str:
@@ -71,6 +73,28 @@ def _ingestion_to_dict(ing: IngestionRequest) -> dict[str, Any]:
         'created_at': ing.created_at.isoformat(),
         'updated_at': ing.updated_at.isoformat(),
     }
+
+
+def _edge_to_dict(edge: LineageEdge) -> dict[str, Any]:
+    return {
+        'id': str(edge.id),
+        'from_asset_id': str(edge.from_asset_id),
+        'to_asset_id': str(edge.to_asset_id),
+        'edge_type': edge.edge_type,
+        'properties': edge.properties,
+        'created_at': edge.created_at.isoformat(),
+        'updated_at': edge.updated_at.isoformat(),
+    }
+
+
+def _parse_int_clamped(value: str | None, *, default: int, min_value: int, max_value: int) -> int | None:
+    if value is None or value == '':
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    return min(max(parsed, min_value), max_value)
 
 
 @csrf_exempt
@@ -219,5 +243,104 @@ def asset_detail(request, asset_id: str):
             rabbitmq_url=os.environ.get('RABBITMQ_URL'),
         )
         return JsonResponse(_asset_to_dict(asset))
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def lineage_edges(request):
+    """Tenant-scoped lineage edge upsert/query."""
+    if request.method == 'POST':
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        items = payload.get('items')
+        if not isinstance(items, list):
+            return JsonResponse({'error': 'items must be a list'}, status=400)
+
+        required_ids: set[str] = set()
+        for item in items:
+            if not isinstance(item, dict):
+                return JsonResponse({'error': 'items must be objects'}, status=400)
+            from_id = item.get('from_asset_id')
+            to_id = item.get('to_asset_id')
+            edge_type = item.get('edge_type')
+            if not from_id or not to_id or not edge_type:
+                return JsonResponse({'error': 'from_asset_id, to_asset_id, and edge_type are required'}, status=400)
+            try:
+                uuid.UUID(from_id)
+                uuid.UUID(to_id)
+            except ValueError:
+                return JsonResponse({'error': 'from_asset_id and to_asset_id must be UUIDs'}, status=400)
+            required_ids.add(from_id)
+            required_ids.add(to_id)
+
+        existing = {str(a.id) for a in DataAsset.objects.filter(id__in=list(required_ids))}
+        if required_ids - existing:
+            return JsonResponse({'error': 'asset_not_found'}, status=404)
+
+        out: list[dict[str, Any]] = []
+        for item in items:
+            edge, _ = LineageEdge.objects.update_or_create(
+                from_asset_id=item['from_asset_id'],
+                to_asset_id=item['to_asset_id'],
+                edge_type=item['edge_type'],
+                defaults={'properties': item.get('properties') or {}},
+            )
+            out.append(_edge_to_dict(edge))
+
+        tenant_schema = _tenant_schema(request)
+        maybe_publish_event(
+            event_type='lineage.edge.upserted',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.lineage.edge.upserted',
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data={'items': out},
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        return JsonResponse({'items': out})
+
+    if request.method == 'GET':
+        asset_id = request.GET.get('asset_id')
+        if not asset_id:
+            return JsonResponse({'error': 'asset_id is required'}, status=400)
+        try:
+            uuid.UUID(asset_id)
+        except ValueError:
+            return JsonResponse({'error': 'asset_id must be a UUID'}, status=400)
+        try:
+            DataAsset.objects.get(id=asset_id)
+        except (ValidationError, DataAsset.DoesNotExist):
+            return JsonResponse({'error': 'not_found'}, status=404)
+
+        direction = request.GET.get('direction', 'downstream')
+        if direction not in {'upstream', 'downstream'}:
+            return JsonResponse({'error': 'direction must be upstream or downstream'}, status=400)
+
+        depth = _parse_int_clamped(request.GET.get('depth'), default=1, min_value=1, max_value=5)
+        if depth is None:
+            return JsonResponse({'error': 'depth must be an integer'}, status=400)
+
+        current = {asset_id}
+        visited_assets = {asset_id}
+        edges: dict[str, LineageEdge] = {}
+        for _ in range(depth):
+            if not current:
+                break
+            if direction == 'upstream':
+                qs = LineageEdge.objects.filter(to_asset_id__in=list(current))
+                next_assets = {str(e.from_asset_id) for e in qs}
+            else:
+                qs = LineageEdge.objects.filter(from_asset_id__in=list(current))
+                next_assets = {str(e.to_asset_id) for e in qs}
+            for e in qs:
+                edges[str(e.id)] = e
+            current = next_assets - visited_assets
+            visited_assets |= current
+
+        edge_items = [_edge_to_dict(e) for e in edges.values()]
+        assets = [_asset_to_dict(a) for a in DataAsset.objects.filter(id__in=list(visited_assets))]
+        return JsonResponse({'edges': edge_items, 'assets': assets})
 
     return JsonResponse({'error': 'method_not_allowed'}, status=405)
