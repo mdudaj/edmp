@@ -7,12 +7,12 @@ def health(request):
     return JsonResponse({'schema': connection.schema_name})
 
 
-def livez(request):
+def probe_ok(request):
     return JsonResponse({'status': 'ok'})
 
 
-def healthz(request):
-    return JsonResponse({'status': 'ok'})
+livez = probe_ok
+healthz = probe_ok
 
 
 def readyz(request):
