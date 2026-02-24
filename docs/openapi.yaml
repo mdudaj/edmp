@@ -85,6 +85,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/XCorrelationId'
         - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
       requestBody:
         required: true
         content:
@@ -109,6 +110,12 @@ paths:
                 $ref: '#/components/schemas/Error'
         '409':
           description: Conflict (duplicate)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden (missing required role when role enforcement is enabled)
           content:
             application/json:
               schema:
@@ -161,6 +168,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/XCorrelationId'
         - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
       requestBody:
         required: true
         content:
@@ -179,6 +187,12 @@ paths:
                 $ref: '#/components/schemas/DataAsset'
         '400':
           description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden (missing required role when role enforcement is enabled)
           content:
             application/json:
               schema:
@@ -216,6 +230,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/XCorrelationId'
         - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
       requestBody:
         required: true
         content:
@@ -244,6 +259,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden (missing required role when role enforcement is enabled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/ingestions:
     post:
       tags: [ingestions]
@@ -251,6 +272,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/XCorrelationId'
         - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
       requestBody:
         required: true
         content:
@@ -269,6 +291,12 @@ paths:
                 $ref: '#/components/schemas/IngestionRequest'
         '400':
           description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden (missing required role when role enforcement is enabled)
           content:
             application/json:
               schema:
@@ -354,6 +382,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/XCorrelationId'
         - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
       requestBody:
         required: true
         content:
@@ -382,6 +411,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden (missing required role when role enforcement is enabled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   parameters:
     XCorrelationId:
@@ -398,6 +433,13 @@ components:
       schema:
         type: string
       description: Optional user identifier for audit/event metadata (scaffold).
+    XUserRoles:
+      name: X-User-Roles
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Optional comma-separated roles (for example `catalog.editor,tenant.admin`).
   headers:
     XCorrelationId:
       schema:

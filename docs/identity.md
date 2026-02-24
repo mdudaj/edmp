@@ -15,6 +15,13 @@ For local development and early integration testing, a simple header-based ident
 * `X-User-Id`: stable user identifier (string)
 * `X-User-Roles`: comma-separated roles (e.g. `catalog.reader,catalog.editor`)
 
+Role checks are currently **opt-in** for easier incremental rollout:
+
+* Set `EDMP_ENFORCE_ROLES=true` to enforce role checks on mutating APIs.
+* Mutating APIs currently require:
+  * `tenant.admin` for `POST /api/v1/tenants`
+  * `catalog.editor` for `POST/PUT /api/v1/assets`, `POST /api/v1/ingestions`, and `POST /api/v1/lineage/edges`
+
 These headers should be injected by an ingress/gateway in non-dev environments, not trusted from the public internet.
 
 ## Target implementation (OIDC)
@@ -47,4 +54,3 @@ Start with a small set of roles and expand later:
 * `policy.admin`: manage policies (future)
 
 When the API grows, move toward ABAC (attributes like classification, ownership, purpose) while preserving the role model for coarse access boundaries.
-

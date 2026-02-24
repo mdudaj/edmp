@@ -9,6 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django_tenants.utils import schema_context
 
 from core.events import maybe_publish_event
+from core.identity import require_role
 from .models import Domain, Tenant
 
 
@@ -39,6 +40,9 @@ def tenants(request):
             return JsonResponse({'items': items})
 
         if request.method == 'POST':
+            forbidden = require_role(request, 'tenant.admin')
+            if forbidden:
+                return forbidden
             payload = _parse_json_body(request)
             if payload is None:
                 return JsonResponse({'error': 'invalid_json'}, status=400)
