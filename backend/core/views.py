@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 from django.db import connection
 from django.db.utils import DatabaseError
@@ -33,7 +34,7 @@ def readyz(request):
     return JsonResponse({'status': 'ok'})
 
 
-def _asset_to_dict(asset: DataAsset) -> dict[str, object]:
+def _asset_to_dict(asset: DataAsset) -> dict[str, Any]:
     return {
         'id': str(asset.id),
         'qualified_name': asset.qualified_name,
