@@ -35,6 +35,15 @@ Probe endpoints are explicitly treated as public (no tenant required):
 
 Celery is configured in `backend/config/celery.py` and uses `TenantTask` (`backend/core/celery.py`) to enforce that tasks execute inside a tenant schema context.
 
+### Metadata catalog (minimal slice)
+
+`backend/core/models.py` includes a `DataAsset` model and a small JSON API:
+
+* `GET /api/v1/assets` (list)
+* `POST /api/v1/assets` (create)
+* `GET /api/v1/assets/<id>` (get)
+* `PUT /api/v1/assets/<id>` (update)
+
 ## Target (evolving) platform shape
 
 This is the intended direction for expanding EDMP capabilities:

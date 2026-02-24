@@ -1,6 +1,12 @@
+import json
+from typing import Any
+
 from django.db import connection
 from django.db.utils import DatabaseError
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+
+from .models import DataAsset
 
 
 def health(request):
@@ -26,3 +32,105 @@ def readyz(request):
     except DatabaseError:
         return JsonResponse({'status': 'not-ready'}, status=503)
     return JsonResponse({'status': 'ok'})
+
+
+def _asset_to_dict(asset: DataAsset) -> dict[str, Any]:
+    return {
+        'id': str(asset.id),
+        'qualified_name': asset.qualified_name,
+        'display_name': asset.display_name,
+        'asset_type': asset.asset_type,
+        'properties': asset.properties,
+        'created_at': asset.created_at.isoformat(),
+        'updated_at': asset.updated_at.isoformat(),
+    }
+
+
+def _parse_json_body(request):
+    try:
+        body = request.body.decode('utf-8') if request.body else ''
+        return json.loads(body or '{}')
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+
+@csrf_exempt
+def assets(request):
+    """List/create tenant-scoped DataAssets.
+
+    GET supports simple offset pagination via ?limit= (default 100, max 500) and ?offset= (default 0).
+    """
+    if request.method == 'GET':
+        try:
+            limit = int(request.GET.get('limit', '100'))
+            offset = int(request.GET.get('offset', '0'))
+        except ValueError:
+            return JsonResponse({'error': 'limit/offset must be integers'}, status=400)
+        limit = min(max(limit, 1), 500)
+        offset = max(offset, 0)
+
+        qs = DataAsset.objects.order_by('created_at')[offset : offset + limit]
+        items = [_asset_to_dict(a) for a in qs]
+        return JsonResponse({'items': items})
+
+    if request.method == 'POST':
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+
+        qualified_name = payload.get('qualified_name')
+        asset_type = payload.get('asset_type')
+        if not qualified_name or not asset_type:
+            return JsonResponse({'error': 'qualified_name and asset_type are required'}, status=400)
+
+        asset = DataAsset.objects.create(
+            qualified_name=qualified_name,
+            display_name=payload.get('display_name') or qualified_name,
+            asset_type=asset_type,
+            properties=payload.get('properties') or {},
+        )
+        return JsonResponse(_asset_to_dict(asset), status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def asset_detail(request, asset_id: str):
+    try:
+        asset = DataAsset.objects.get(id=asset_id)
+    except DataAsset.DoesNotExist:
+        return JsonResponse({'error': 'not_found'}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse(_asset_to_dict(asset))
+
+    if request.method == 'PUT':
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+
+        if 'asset_type' in payload and payload['asset_type'] != asset.asset_type:
+            return JsonResponse({'error': 'asset_type is immutable'}, status=400)
+
+        if 'display_name' in payload:
+            if payload['display_name'] is None:
+                return JsonResponse({'error': 'display_name cannot be null'}, status=400)
+            asset.display_name = payload['display_name']
+        if 'properties' in payload:
+            props = payload['properties']
+            if props is None:
+                asset.properties = {}
+            else:
+                if not isinstance(props, dict):
+                    return JsonResponse({'error': 'properties must be an object'}, status=400)
+                merged = dict(asset.properties)
+                for k, v in props.items():
+                    if v is None:
+                        merged.pop(k, None)
+                    else:
+                        merged[k] = v
+                asset.properties = merged
+        asset.save()
+        return JsonResponse(_asset_to_dict(asset))
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
