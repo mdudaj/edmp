@@ -1,6 +1,6 @@
 # Ingestion design notes
 
-This scaffold intentionally does **not** implement ingestion connectors yet, but it should be designed so that ingestion can be added without changing the core multi-tenant / catalog foundations.
+This scaffold now includes a minimal ingestion request API (`POST /api/v1/ingestions`, `GET /api/v1/ingestions/<id>`) to capture intent and track status. It intentionally does **not** implement ingestion connectors yet, but it should be designed so that connector execution can be added without changing the core multi-tenant / catalog foundations.
 
 ## Goals
 
@@ -47,4 +47,3 @@ If `RABBITMQ_URL` is configured, emit domain events:
 * `ingestion.failed`
 
 Routing keys should follow the existing convention (see `docs/events.md`).
-

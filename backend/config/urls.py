@@ -17,7 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 
-from core.views import asset_detail, assets, health, healthz, livez, readyz
+from core.views import asset_detail, assets, health, healthz, ingestion_detail, ingestions, livez, readyz
 from tenants.views import tenants
 
 urlpatterns = [
@@ -28,5 +28,7 @@ urlpatterns = [
     path('api/v1/tenants', tenants, name='tenants'),
     path('api/v1/assets', assets, name='assets'),
     path('api/v1/assets/<uuid:asset_id>', asset_detail, name='asset_detail'),
+    path('api/v1/ingestions', ingestions, name='ingestions'),
+    path('api/v1/ingestions/<uuid:ingestion_id>', ingestion_detail, name='ingestion_detail'),
     path('admin/', admin.site.urls),
 ]
