@@ -14,6 +14,7 @@ tags:
   - name: tenants
   - name: assets
   - name: ingestions
+  - name: lineage
 paths:
   /healthz:
     get:
@@ -299,6 +300,88 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/lineage/edges:
+    get:
+      tags: [lineage]
+      summary: Query lineage edges (tenant-scoped)
+      parameters:
+        - name: asset_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            default: downstream
+            enum: [upstream, downstream]
+        - name: depth
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+            maximum: 5
+      responses:
+        '200':
+          description: Lineage query response
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageQueryResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Asset not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags: [lineage]
+      summary: Upsert lineage edges (tenant-scoped)
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/XUserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertLineageEdgesRequest'
+      responses:
+        '200':
+          description: Edges upserted
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpsertLineageEdgesResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Referenced asset not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   parameters:
     XCorrelationId:
@@ -456,3 +539,71 @@ components:
         mode:
           type: string
       required: [connector, source]
+    LineageEdge:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        from_asset_id:
+          type: string
+          format: uuid
+        to_asset_id:
+          type: string
+          format: uuid
+        edge_type:
+          type: string
+          example: derived_from
+        properties:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, from_asset_id, to_asset_id, edge_type, properties, created_at, updated_at]
+    UpsertLineageEdgeItem:
+      type: object
+      properties:
+        from_asset_id:
+          type: string
+          format: uuid
+        to_asset_id:
+          type: string
+          format: uuid
+        edge_type:
+          type: string
+        properties:
+          type: object
+          additionalProperties: true
+      required: [from_asset_id, to_asset_id, edge_type]
+    UpsertLineageEdgesRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpsertLineageEdgeItem'
+      required: [items]
+    UpsertLineageEdgesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineageEdge'
+      required: [items]
+    LineageQueryResponse:
+      type: object
+      properties:
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineageEdge'
+        assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataAsset'
+      required: [edges, assets]

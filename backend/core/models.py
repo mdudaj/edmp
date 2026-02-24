@@ -37,3 +37,18 @@ class IngestionRequest(models.Model):
     status = models.CharField(max_length=32, choices=Status.choices, default=Status.QUEUED)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class LineageEdge(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    from_asset = models.ForeignKey(DataAsset, on_delete=models.CASCADE, related_name='outgoing_edges')
+    to_asset = models.ForeignKey(DataAsset, on_delete=models.CASCADE, related_name='incoming_edges')
+    edge_type = models.CharField(max_length=100)
+    properties = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['from_asset', 'to_asset', 'edge_type'], name='uniq_lineage_edge'),
+        ]
