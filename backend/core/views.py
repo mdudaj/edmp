@@ -340,8 +340,7 @@ def lineage_edges(request):
             visited_assets |= current
 
         edge_items = [_edge_to_dict(e) for e in edges.values()]
-        asset_ids: set[str] = set(visited_assets)
-        assets = [_asset_to_dict(a) for a in DataAsset.objects.filter(id__in=list(asset_ids))]
+        assets = [_asset_to_dict(a) for a in DataAsset.objects.filter(id__in=list(visited_assets))]
         return JsonResponse({'edges': edge_items, 'assets': assets})
 
     return JsonResponse({'error': 'method_not_allowed'}, status=405)
