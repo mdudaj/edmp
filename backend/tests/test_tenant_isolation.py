@@ -15,7 +15,7 @@ def test_requests_without_tenant_are_rejected():
     assert resp.status_code == 404
     assert resp.json() == {'error': 'tenant_not_found'}
     assert resp.headers.get('X-Correlation-Id')
-    uuid.UUID(resp.headers['X-Correlation-Id'])
+    assert uuid.UUID(resp.headers['X-Correlation-Id'])
 
 
 @pytest.mark.django_db(transaction=True)
