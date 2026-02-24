@@ -1,4 +1,5 @@
 from django.db import connection
+from django.db.utils import DatabaseError
 from django.http import JsonResponse
 
 
@@ -19,6 +20,6 @@ def readyz(request):
         connection.ensure_connection()
         with connection.cursor() as cursor:
             cursor.execute('SELECT 1')
-    except Exception:
+    except DatabaseError:
         return JsonResponse({'status': 'not-ready'}, status=503)
     return JsonResponse({'status': 'ok'})

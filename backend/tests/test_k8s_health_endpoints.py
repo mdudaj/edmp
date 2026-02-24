@@ -1,5 +1,6 @@
 import pytest
 from django.db import connection
+from django.db.utils import DatabaseError
 from django.test import Client
 
 
@@ -30,7 +31,7 @@ def test_readyz_does_not_require_tenant_host_and_checks_db():
 @pytest.mark.django_db(transaction=True)
 def test_readyz_returns_503_when_db_unavailable(monkeypatch):
     def raise_error():
-        raise Exception('db down')
+        raise DatabaseError('db down')
 
     monkeypatch.setattr(connection, 'ensure_connection', raise_error)
 
