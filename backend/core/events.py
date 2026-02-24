@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 import pika
+
+logger = logging.getLogger(__name__)
 
 
 def build_event_payload(
@@ -74,4 +77,5 @@ def maybe_publish_event(
     try:
         publish_event(exchange=exchange, routing_key=routing_key, payload=payload, rabbitmq_url=rabbitmq_url)
     except Exception:
+        logger.exception('Failed to publish event %s to %s', event_type, routing_key)
         return

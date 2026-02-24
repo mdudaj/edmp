@@ -11,6 +11,11 @@ from .events import maybe_publish_event
 from .models import DataAsset
 
 
+def _tenant_schema(request) -> str:
+    tenant = getattr(request, 'tenant', None)
+    return tenant.schema_name if tenant else connection.schema_name
+
+
 def health(request):
     return JsonResponse({'schema': connection.schema_name})
 
@@ -91,7 +96,7 @@ def assets(request):
             asset_type=asset_type,
             properties=payload.get('properties') or {},
         )
-        tenant_schema = getattr(getattr(request, 'tenant', None), 'schema_name', connection.schema_name)
+        tenant_schema = _tenant_schema(request)
         maybe_publish_event(
             event_type='asset.created',
             tenant_id=tenant_schema,
@@ -143,7 +148,7 @@ def asset_detail(request, asset_id: str):
                         merged[k] = v
                 asset.properties = merged
         asset.save()
-        tenant_schema = getattr(getattr(request, 'tenant', None), 'schema_name', connection.schema_name)
+        tenant_schema = _tenant_schema(request)
         maybe_publish_event(
             event_type='asset.updated',
             tenant_id=tenant_schema,
