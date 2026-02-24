@@ -54,8 +54,10 @@ def tenants(request):
                 dom = Domain(domain=domain, tenant=tenant, is_primary=True)
                 dom.full_clean()
                 dom.save()
-            except (ValidationError, IntegrityError):
-                return JsonResponse({'error': 'invalid_tenant'}, status=400)
+            except ValidationError:
+                return JsonResponse({'error': 'validation_error'}, status=400)
+            except IntegrityError:
+                return JsonResponse({'error': 'conflict'}, status=409)
 
             return JsonResponse(_tenant_to_dict(tenant), status=201)
 

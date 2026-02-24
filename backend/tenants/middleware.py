@@ -21,8 +21,8 @@ class EDMPTenantMiddleware(TenantMainMiddleware):
         # hostname. For a multi-tenant app, these endpoints must still work to
         # allow the platform to determine container health.
         path = request.path.rstrip('/')
-        is_public_prefix = any(path == p or path.startswith(f'{p}/') for p in self.PUBLIC_ENDPOINT_PREFIXES)
-        if path in self.PUBLIC_ENDPOINT_PATHS or is_public_prefix:
+        is_public_path = any(path == p or path.startswith(f'{p}/') for p in self.PUBLIC_ENDPOINT_PREFIXES)
+        if path in self.PUBLIC_ENDPOINT_PATHS or is_public_path:
             connection.set_schema_to_public()
             request.tenant = None
             return None
