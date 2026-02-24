@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 
 
@@ -8,4 +10,14 @@ class Project(models.Model):
     def __str__(self) -> str:
         return self.name
 
-# Create your models here.
+class DataAsset(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    qualified_name = models.CharField(max_length=512, unique=True)
+    display_name = models.CharField(max_length=200)
+    asset_type = models.CharField(max_length=100)
+    properties = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return self.qualified_name
