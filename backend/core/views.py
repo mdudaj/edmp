@@ -49,8 +49,8 @@ def _asset_to_dict(asset: DataAsset) -> dict[str, Any]:
         'qualified_name': asset.qualified_name,
         'display_name': asset.display_name,
         'asset_type': asset.asset_type,
-        'description': asset.description or None,
-        'owner': asset.owner or None,
+        'description': None if asset.description == '' else asset.description,
+        'owner': None if asset.owner == '' else asset.owner,
         'tags': asset.tags,
         'classifications': asset.classifications,
         'properties': asset.properties,
@@ -202,8 +202,8 @@ def assets(request):
             qualified_name=qualified_name,
             display_name=payload.get('display_name') or qualified_name,
             asset_type=asset_type,
-            description=description or '',
-            owner=owner or '',
+            description='' if description is None else description,
+            owner='' if owner is None else owner,
             tags=tags,
             classifications=classifications,
             properties=payload.get('properties') or {},
@@ -248,11 +248,11 @@ def asset_detail(request, asset_id: str):
         if 'description' in payload:
             if payload['description'] is not None and not isinstance(payload['description'], str):
                 return JsonResponse({'error': 'description must be a string'}, status=400)
-            asset.description = payload['description'] or ''
+            asset.description = '' if payload['description'] is None else payload['description']
         if 'owner' in payload:
             if payload['owner'] is not None and not isinstance(payload['owner'], str):
                 return JsonResponse({'error': 'owner must be a string'}, status=400)
-            asset.owner = payload['owner'] or ''
+            asset.owner = '' if payload['owner'] is None else payload['owner']
         if 'tags' in payload:
             tags = _parse_string_list(payload['tags'])
             if tags is None:
