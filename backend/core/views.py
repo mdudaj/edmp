@@ -5,4 +5,18 @@ from django.http import JsonResponse
 def health(request):
     return JsonResponse({'schema': connection.schema_name})
 
+
+def livez(request):
+    return JsonResponse({'status': 'ok'})
+
+
+def readyz(request):
+    try:
+        connection.ensure_connection()
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+    except Exception:
+        return JsonResponse({'status': 'not-ready'}, status=503)
+    return JsonResponse({'status': 'ok'})
+
 # Create your views here.
