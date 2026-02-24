@@ -87,7 +87,7 @@ def _edge_to_dict(edge: LineageEdge) -> dict[str, Any]:
     }
 
 
-def _parse_int(value: str | None, *, default: int, min_value: int, max_value: int) -> int | None:
+def _parse_int_clamped(value: str | None, *, default: int, min_value: int, max_value: int) -> int | None:
     if value is None or value == '':
         return default
     try:
@@ -318,7 +318,7 @@ def lineage_edges(request):
         if direction not in {'upstream', 'downstream'}:
             return JsonResponse({'error': 'direction must be upstream or downstream'}, status=400)
 
-        depth = _parse_int(request.GET.get('depth'), default=1, min_value=1, max_value=5)
+        depth = _parse_int_clamped(request.GET.get('depth'), default=1, min_value=1, max_value=5)
         if depth is None:
             return JsonResponse({'error': 'depth must be an integer'}, status=400)
 
@@ -341,9 +341,6 @@ def lineage_edges(request):
 
         edge_items = [_edge_to_dict(e) for e in edges.values()]
         asset_ids: set[str] = set(visited_assets)
-        for e in edges.values():
-            asset_ids.add(str(e.from_asset_id))
-            asset_ids.add(str(e.to_asset_id))
         assets = [_asset_to_dict(a) for a in DataAsset.objects.filter(id__in=list(asset_ids))]
         return JsonResponse({'edges': edge_items, 'assets': assets})
 
