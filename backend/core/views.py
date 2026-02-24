@@ -104,17 +104,22 @@ def asset_detail(request, asset_id: str):
         if payload is None:
             return JsonResponse({'error': 'invalid_json'}, status=400)
 
-        if 'asset_type' in payload and payload.get('asset_type') != asset.asset_type:
+        if 'asset_type' in payload and payload['asset_type'] != asset.asset_type:
             return JsonResponse({'error': 'asset_type is immutable'}, status=400)
 
-        asset.display_name = payload.get('display_name') or asset.display_name
+        if 'display_name' in payload:
+            if payload['display_name'] is None:
+                return JsonResponse({'error': 'display_name cannot be null'}, status=400)
+            asset.display_name = payload['display_name']
         if 'properties' in payload:
             props = payload.get('properties')
             if props is None:
                 asset.properties = {}
             else:
-                merged = dict(asset.properties or {})
-                for k, v in (props or {}).items():
+                if not isinstance(props, dict):
+                    return JsonResponse({'error': 'properties must be an object'}, status=400)
+                merged = dict(asset.properties)
+                for k, v in props.items():
                     if v is None:
                         merged.pop(k, None)
                     else:
