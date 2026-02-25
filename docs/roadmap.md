@@ -35,6 +35,7 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 * **Data classification taxonomy**: define tenant-scoped sensitivity levels and lifecycle conventions used by policy, retention, and stewardship flows (see `docs/classification.md`).
 * **Business glossary**: define tenant-scoped business terms, ownership, and asset-linking conventions (see `docs/glossary.md`).
 * **Data products**: define tenant-scoped product metadata, ownership, and lifecycle conventions built on existing catalog and governance foundations (see `docs/data-products.md`).
+* **Data sharing**: define tenant-scoped provider/consumer share lifecycle, constraint handling, and revocation conventions for governed distribution (see `docs/data-sharing.md`).
 * **Data stewardship operations**: define tenant-scoped stewardship queues, assignment/triage lifecycle, and resolution events across governance domains (see `docs/stewardship.md`).
 * **Workflow orchestration**: define lightweight scheduled/event-driven workflow runs built on connector executions (see `docs/orchestration.md`).
 
