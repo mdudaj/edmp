@@ -23,8 +23,9 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 
 * **Connector execution model**: expand ingestion into connector plugins and job-style long-running execution paths (see `docs/connectors.md`).
 * **Governance depth**: policy lifecycle workflows (review/approve/rollback) and stronger classification controls (see `docs/governance-workflows.md`).
+* **Workflow orchestration**: define lightweight scheduled/event-driven workflow runs built on connector executions (see `docs/orchestration.md`).
 
 ## Out of scope for this scaffold (yet)
 
-* Full workflow orchestration and scheduling (Airflow/Argo/etc.) — prefer clean integration points first (see `docs/orchestration.md`).
+* Full external workflow engine adoption (Airflow/Argo/etc.) — prefer clean integration points first (see `docs/orchestration.md`).
 * Large-scale data lake/warehouse provisioning — EDMP should integrate with existing compute/storage layers.
