@@ -66,6 +66,18 @@ A task is complete only when:
 * reviewer signs off on correctness/security concerns,
 * and integration gates pass without open blockers.
 
+## End-to-end execution policy (mandatory)
+
+Every implementation task in this project should be executed end-to-end in one flow:
+
+1. implement the slice,
+2. run tests for the slice and then full backend suite,
+3. fix discovered issues,
+4. rerun tests until green,
+5. then commit/push.
+
+Tasks should not be reported as done while still waiting on test execution or post-implementation validation.
+
 ## Local QA bootstrap (recommended)
 
 Use a deterministic local dependency bootstrap before running backend tests:

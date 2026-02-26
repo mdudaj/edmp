@@ -148,3 +148,34 @@ class RetentionRun(models.Model):
     summary = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+
+
+class PrivacyProfile(models.Model):
+    class LawfulBasis(models.TextChoices):
+        CONTRACT = 'contract'
+        LEGAL_OBLIGATION = 'legal_obligation'
+        CONSENT = 'consent'
+        LEGITIMATE_INTEREST = 'legitimate_interest'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    lawful_basis = models.CharField(max_length=32, choices=LawfulBasis.choices)
+    consent_required = models.BooleanField(default=False)
+    consent_state = models.CharField(max_length=16, default='unknown')
+    privacy_flags = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class ConsentEvent(models.Model):
+    class ConsentState(models.TextChoices):
+        UNKNOWN = 'unknown'
+        GRANTED = 'granted'
+        WITHDRAWN = 'withdrawn'
+        EXPIRED = 'expired'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    profile = models.ForeignKey(PrivacyProfile, on_delete=models.CASCADE, related_name='consent_events')
+    consent_state = models.CharField(max_length=16, choices=ConsentState.choices)
+    reason = models.CharField(max_length=512, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)

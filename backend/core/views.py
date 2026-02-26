@@ -16,10 +16,12 @@ from .events import maybe_publish_audit_event, maybe_publish_event
 from .identity import require_any_role, require_role
 from .metrics import DB_READINESS_ERRORS, metrics_response
 from .models import (
+    ConsentEvent,
     DataAsset,
     DataContract,
     IngestionRequest,
     LineageEdge,
+    PrivacyProfile,
     QualityCheckResult,
     QualityRule,
     RetentionHold,
@@ -195,6 +197,29 @@ def _retention_run_to_dict(run: RetentionRun) -> dict[str, Any]:
 
 def _is_day_duration(value: str) -> bool:
     return bool(re.fullmatch(r'P\d+D', value or ''))
+
+
+def _privacy_profile_to_dict(profile: PrivacyProfile) -> dict[str, Any]:
+    return {
+        'id': str(profile.id),
+        'name': profile.name,
+        'lawful_basis': profile.lawful_basis,
+        'consent_required': profile.consent_required,
+        'consent_state': profile.consent_state,
+        'privacy_flags': profile.privacy_flags,
+        'created_at': profile.created_at.isoformat(),
+        'updated_at': profile.updated_at.isoformat(),
+    }
+
+
+def _consent_event_to_dict(event: ConsentEvent) -> dict[str, Any]:
+    return {
+        'id': str(event.id),
+        'profile_id': str(event.profile_id),
+        'consent_state': event.consent_state,
+        'reason': event.reason,
+        'created_at': event.created_at.isoformat(),
+    }
 
 
 def _parse_int_clamped(value: str | None, *, default: int, min_value: int, max_value: int) -> int | None:
@@ -394,6 +419,223 @@ def retention_runs(request):
         ).get(propagate=True)
         refreshed = RetentionRun.objects.get(id=run.id)
         return JsonResponse({'run': _retention_run_to_dict(refreshed), 'result': result}, status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def privacy_profiles(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(request, {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        items = [_privacy_profile_to_dict(p) for p in PrivacyProfile.objects.order_by('-updated_at')]
+        return JsonResponse({'items': items})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        name = payload.get('name')
+        lawful_basis = payload.get('lawful_basis')
+        if not name or not lawful_basis:
+            return JsonResponse({'error': 'name and lawful_basis are required'}, status=400)
+        if lawful_basis not in {
+            PrivacyProfile.LawfulBasis.CONTRACT,
+            PrivacyProfile.LawfulBasis.LEGAL_OBLIGATION,
+            PrivacyProfile.LawfulBasis.CONSENT,
+            PrivacyProfile.LawfulBasis.LEGITIMATE_INTEREST,
+        }:
+            return JsonResponse({'error': 'invalid_lawful_basis'}, status=400)
+        consent_state = payload.get('consent_state') or ConsentEvent.ConsentState.UNKNOWN
+        if consent_state not in {
+            ConsentEvent.ConsentState.UNKNOWN,
+            ConsentEvent.ConsentState.GRANTED,
+            ConsentEvent.ConsentState.WITHDRAWN,
+            ConsentEvent.ConsentState.EXPIRED,
+        }:
+            return JsonResponse({'error': 'invalid_consent_state'}, status=400)
+        privacy_flags = payload.get('privacy_flags') or []
+        if not isinstance(privacy_flags, list) or any(not isinstance(flag, str) for flag in privacy_flags):
+            return JsonResponse({'error': 'privacy_flags must be an array of strings'}, status=400)
+
+        profile = PrivacyProfile.objects.create(
+            name=name,
+            lawful_basis=lawful_basis,
+            consent_required=bool(payload.get('consent_required', False)),
+            consent_state=consent_state,
+            privacy_flags=privacy_flags,
+        )
+        tenant_schema = _tenant_schema(request)
+        maybe_publish_event(
+            event_type='privacy.profile.created',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.privacy.profile.created',
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_privacy_profile_to_dict(profile),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        maybe_publish_audit_event(
+            tenant_id=tenant_schema,
+            action='privacy.profile.created',
+            resource_type='privacy_profile',
+            resource_id=str(profile.id),
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_privacy_profile_to_dict(profile),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        return JsonResponse(_privacy_profile_to_dict(profile), status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def privacy_profile_detail(request, profile_id: str):
+    try:
+        profile = PrivacyProfile.objects.get(id=profile_id)
+    except (ValidationError, PrivacyProfile.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+
+    if request.method == 'GET':
+        forbidden = require_any_role(request, {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        return JsonResponse(_privacy_profile_to_dict(profile))
+
+    if request.method == 'PATCH':
+        forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        if 'name' in payload:
+            profile.name = payload['name']
+        if 'lawful_basis' in payload:
+            lawful_basis = payload['lawful_basis']
+            if lawful_basis not in {
+                PrivacyProfile.LawfulBasis.CONTRACT,
+                PrivacyProfile.LawfulBasis.LEGAL_OBLIGATION,
+                PrivacyProfile.LawfulBasis.CONSENT,
+                PrivacyProfile.LawfulBasis.LEGITIMATE_INTEREST,
+            }:
+                return JsonResponse({'error': 'invalid_lawful_basis'}, status=400)
+            profile.lawful_basis = lawful_basis
+        if 'consent_required' in payload:
+            profile.consent_required = bool(payload['consent_required'])
+        if 'consent_state' in payload:
+            consent_state = payload['consent_state']
+            if consent_state not in {
+                ConsentEvent.ConsentState.UNKNOWN,
+                ConsentEvent.ConsentState.GRANTED,
+                ConsentEvent.ConsentState.WITHDRAWN,
+                ConsentEvent.ConsentState.EXPIRED,
+            }:
+                return JsonResponse({'error': 'invalid_consent_state'}, status=400)
+            profile.consent_state = consent_state
+        if 'privacy_flags' in payload:
+            flags = payload['privacy_flags']
+            if not isinstance(flags, list) or any(not isinstance(flag, str) for flag in flags):
+                return JsonResponse({'error': 'privacy_flags must be an array of strings'}, status=400)
+            profile.privacy_flags = flags
+        profile.save()
+        tenant_schema = _tenant_schema(request)
+        maybe_publish_event(
+            event_type='privacy.profile.updated',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.privacy.profile.updated',
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_privacy_profile_to_dict(profile),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        maybe_publish_audit_event(
+            tenant_id=tenant_schema,
+            action='privacy.profile.updated',
+            resource_type='privacy_profile',
+            resource_id=str(profile.id),
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_privacy_profile_to_dict(profile),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        return JsonResponse(_privacy_profile_to_dict(profile))
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def privacy_consent_events(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(request, {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        profile_id = request.GET.get('profile_id')
+        qs = ConsentEvent.objects.order_by('-created_at')
+        if profile_id:
+            qs = qs.filter(profile_id=profile_id)
+        return JsonResponse({'items': [_consent_event_to_dict(e) for e in qs]})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        profile_id = payload.get('profile_id')
+        consent_state = payload.get('consent_state')
+        if not profile_id or not consent_state:
+            return JsonResponse({'error': 'profile_id and consent_state are required'}, status=400)
+        if consent_state not in {
+            ConsentEvent.ConsentState.UNKNOWN,
+            ConsentEvent.ConsentState.GRANTED,
+            ConsentEvent.ConsentState.WITHDRAWN,
+            ConsentEvent.ConsentState.EXPIRED,
+        }:
+            return JsonResponse({'error': 'invalid_consent_state'}, status=400)
+        try:
+            profile = PrivacyProfile.objects.get(id=profile_id)
+        except (ValidationError, PrivacyProfile.DoesNotExist):
+            return JsonResponse({'error': 'profile_not_found'}, status=404)
+
+        event = ConsentEvent.objects.create(
+            profile=profile,
+            consent_state=consent_state,
+            reason=payload.get('reason') or '',
+        )
+        profile.consent_state = consent_state
+        profile.save(update_fields=['consent_state', 'updated_at'])
+        tenant_schema = _tenant_schema(request)
+        maybe_publish_event(
+            event_type='privacy.consent.changed',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.privacy.consent.changed',
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data={'profile': _privacy_profile_to_dict(profile), 'consent_event': _consent_event_to_dict(event)},
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        if consent_state in {ConsentEvent.ConsentState.WITHDRAWN, ConsentEvent.ConsentState.EXPIRED}:
+            maybe_publish_event(
+                event_type='privacy.action.required',
+                tenant_id=tenant_schema,
+                routing_key=f'{tenant_schema}.privacy.action.required',
+                correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+                user_id=request.headers.get('X-User-Id'),
+                data={
+                    'profile_id': str(profile.id),
+                    'consent_state': consent_state,
+                    'actions': ['policy.re_evaluate', 'retention.review', 'stewardship.triage'],
+                },
+                rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+            )
+        return JsonResponse(_consent_event_to_dict(event), status=201)
 
     return JsonResponse({'error': 'method_not_allowed'}, status=405)
 
