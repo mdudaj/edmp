@@ -44,6 +44,7 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 * **Data sharing**: define tenant-scoped provider/consumer share lifecycle, constraint handling, and revocation conventions for governed distribution (see `docs/data-sharing.md`).
 * **Metadata versioning**: define tenant-scoped draft/publish/supersede conventions for auditable metadata evolution (see `docs/metadata-versioning.md`).
 * **Agentic AI execution**: define tenant-scoped tool governance, timeout controls, and execution audit/event conventions (see `docs/agentic-ai.md`).
+* **Self-reflective delivery workflow**: define implementation-agent roles, handoff contracts, retry budgets, and quality gates for faster feature delivery (see `docs/self-reflective-implementation.md`).
 * **Data stewardship operations**: define tenant-scoped stewardship queues, assignment/triage lifecycle, and resolution events across governance domains (see `docs/stewardship.md`).
 * **Workflow orchestration**: define lightweight scheduled/event-driven workflow runs built on connector executions (see `docs/orchestration.md`).
 

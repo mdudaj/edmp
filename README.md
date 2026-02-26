@@ -33,6 +33,7 @@ This repository contains an initial scaffold for a Kubernetes-native, multi-tena
 * [Data products](docs/data-products.md)
 * [Data sharing](docs/data-sharing.md)
 * [Agentic AI execution](docs/agentic-ai.md)
+* [Self-reflective implementation workflow](docs/self-reflective-implementation.md)
 * [Metadata versioning](docs/metadata-versioning.md)
 * [Reference data management](docs/reference-data.md)
 * [Master data management](docs/master-data.md)
