@@ -24,6 +24,8 @@ from .models import (
     IngestionRequest,
     LineageEdge,
     PrivacyProfile,
+    ReferenceDataset,
+    ReferenceDatasetVersion,
     ResidencyProfile,
     QualityCheckResult,
     QualityRule,
@@ -250,6 +252,31 @@ def _access_request_to_dict(access_request: AccessRequest) -> dict[str, Any]:
         'expires_at': access_request.expires_at.isoformat() if access_request.expires_at else None,
         'created_at': access_request.created_at.isoformat(),
         'updated_at': access_request.updated_at.isoformat(),
+    }
+
+
+def _reference_dataset_to_dict(dataset: ReferenceDataset) -> dict[str, Any]:
+    active_version = dataset.versions.filter(status=ReferenceDatasetVersion.Status.ACTIVE).order_by('-version').first()
+    return {
+        'id': str(dataset.id),
+        'name': dataset.name,
+        'owner': dataset.owner or None,
+        'domain': dataset.domain or None,
+        'active_version': active_version.version if active_version else None,
+        'created_at': dataset.created_at.isoformat(),
+        'updated_at': dataset.updated_at.isoformat(),
+    }
+
+
+def _reference_dataset_version_to_dict(version: ReferenceDatasetVersion) -> dict[str, Any]:
+    return {
+        'id': str(version.id),
+        'dataset_id': str(version.dataset_id),
+        'version': version.version,
+        'status': version.status,
+        'values': version.values,
+        'created_at': version.created_at.isoformat(),
+        'updated_at': version.updated_at.isoformat(),
     }
 
 
@@ -1018,6 +1045,170 @@ def access_request_decision(request, request_id: str):
         rabbitmq_url=os.environ.get('RABBITMQ_URL'),
     )
     return JsonResponse(_access_request_to_dict(access_request))
+
+
+@csrf_exempt
+def reference_datasets(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(request, {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        datasets = ReferenceDataset.objects.order_by('-updated_at')
+        return JsonResponse({'items': [_reference_dataset_to_dict(item) for item in datasets]})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        name = (payload.get('name') or '').strip()
+        if not name:
+            return JsonResponse({'error': 'name is required'}, status=400)
+        dataset = ReferenceDataset.objects.create(
+            name=name,
+            owner=(payload.get('owner') or ''),
+            domain=(payload.get('domain') or ''),
+        )
+        tenant_schema = _tenant_schema(request)
+        maybe_publish_event(
+            event_type='reference.dataset.created',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.reference.dataset.created',
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_reference_dataset_to_dict(dataset),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        maybe_publish_audit_event(
+            tenant_id=tenant_schema,
+            action='reference.dataset.created',
+            resource_type='reference_dataset',
+            resource_id=str(dataset.id),
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_reference_dataset_to_dict(dataset),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        return JsonResponse(_reference_dataset_to_dict(dataset), status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def reference_dataset_versions(request, dataset_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        dataset = ReferenceDataset.objects.get(id=dataset_id)
+    except (ValidationError, ReferenceDataset.DoesNotExist):
+        return JsonResponse({'error': 'dataset_not_found'}, status=404)
+
+    payload = _parse_json_body(request)
+    if payload is None:
+        return JsonResponse({'error': 'invalid_json'}, status=400)
+    values = payload.get('values')
+    if values is None:
+        values = []
+    if not isinstance(values, list):
+        return JsonResponse({'error': 'values must be a list'}, status=400)
+
+    version = payload.get('version')
+    if version is None:
+        version = (ReferenceDatasetVersion.objects.filter(dataset_id=dataset_id).aggregate(max_v=Max('version')).get('max_v') or 0) + 1
+    elif not isinstance(version, int) or version < 1:
+        return JsonResponse({'error': 'version must be a positive integer'}, status=400)
+
+    status_value = payload.get('status') or ReferenceDatasetVersion.Status.DRAFT
+    if status_value not in {ReferenceDatasetVersion.Status.DRAFT, ReferenceDatasetVersion.Status.APPROVED}:
+        return JsonResponse({'error': 'status must be draft or approved'}, status=400)
+
+    created = ReferenceDatasetVersion.objects.create(
+        dataset=dataset,
+        version=version,
+        status=status_value,
+        values=values,
+    )
+    tenant_schema = _tenant_schema(request)
+    maybe_publish_event(
+        event_type='reference.version.created',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.reference.version.created',
+        correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_reference_dataset_version_to_dict(created),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='reference.version.created',
+        resource_type='reference_dataset_version',
+        resource_id=str(created.id),
+        correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_reference_dataset_version_to_dict(created),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(_reference_dataset_version_to_dict(created), status=201)
+
+
+@csrf_exempt
+def reference_dataset_activate(request, dataset_id: str, version: int):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        target = ReferenceDatasetVersion.objects.get(dataset_id=dataset_id, version=version)
+    except (ValidationError, ReferenceDatasetVersion.DoesNotExist):
+        return JsonResponse({'error': 'version_not_found'}, status=404)
+
+    ReferenceDatasetVersion.objects.filter(dataset_id=dataset_id, status=ReferenceDatasetVersion.Status.ACTIVE).exclude(
+        id=target.id
+    ).update(status=ReferenceDatasetVersion.Status.DEPRECATED, updated_at=timezone.now())
+    target.status = ReferenceDatasetVersion.Status.ACTIVE
+    target.save(update_fields=['status', 'updated_at'])
+
+    tenant_schema = _tenant_schema(request)
+    maybe_publish_event(
+        event_type='reference.version.activated',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.reference.version.activated',
+        correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_reference_dataset_version_to_dict(target),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='reference.version.activated',
+        resource_type='reference_dataset_version',
+        resource_id=str(target.id),
+        correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_reference_dataset_version_to_dict(target),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(_reference_dataset_version_to_dict(target))
+
+
+@csrf_exempt
+def reference_dataset_version_values(request, dataset_id: str, version: int):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        dataset_version = ReferenceDatasetVersion.objects.get(dataset_id=dataset_id, version=version)
+    except (ValidationError, ReferenceDatasetVersion.DoesNotExist):
+        return JsonResponse({'error': 'version_not_found'}, status=404)
+    return JsonResponse({'dataset_id': str(dataset_version.dataset_id), 'version': dataset_version.version, 'values': dataset_version.values})
 
 
 @csrf_exempt

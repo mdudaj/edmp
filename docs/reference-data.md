@@ -13,14 +13,21 @@ Initial scope:
 * Controlled promotion flow (`draft` -> `approved` -> `active` -> `deprecated`).
 * Linkage from catalog assets to the reference dataset/version they depend on.
 
-## API and lifecycle conventions
+## API and lifecycle conventions (implemented scaffold slice)
 
-Suggested first HTTP surface under `/api/v1/reference-data/...`:
+HTTP surface under `/api/v1/reference-data/...`:
 
 * `POST /datasets` / `GET /datasets`
 * `POST /datasets/<id>/versions`
 * `POST /datasets/<id>/versions/<version>/activate`
 * `GET /datasets/<id>/versions/<version>/values`
+
+Current behavior:
+
+* Dataset creation captures `name`, `owner`, and `domain` metadata.
+* Version creation stores immutable value snapshots and supports `draft` or `approved` initial state.
+* Activation enforces a single `active` version per dataset by deprecating any previously active version.
+* Dataset listing returns an `active_version` convenience field.
 
 Lifecycle expectations:
 

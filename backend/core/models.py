@@ -226,3 +226,38 @@ class AccessRequest(models.Model):
     expires_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class ReferenceDataset(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    owner = models.CharField(max_length=200, blank=True, default='')
+    domain = models.CharField(max_length=200, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['name'], name='uniq_reference_dataset_name'),
+        ]
+
+
+class ReferenceDatasetVersion(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = 'draft'
+        APPROVED = 'approved'
+        ACTIVE = 'active'
+        DEPRECATED = 'deprecated'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dataset = models.ForeignKey(ReferenceDataset, on_delete=models.CASCADE, related_name='versions')
+    version = models.IntegerField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
+    values = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['dataset', 'version'], name='uniq_reference_dataset_version'),
+        ]
