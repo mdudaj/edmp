@@ -18,6 +18,7 @@ from .identity import require_any_role, require_role
 from .metrics import DB_READINESS_ERRORS, metrics_response
 from .models import (
     AccessRequest,
+    Classification,
     ConsentEvent,
     DataAsset,
     DataContract,
@@ -311,6 +312,19 @@ def _master_merge_candidate_to_dict(
         'approved_by': candidate.approved_by or None,
         'created_at': candidate.created_at.isoformat(),
         'updated_at': candidate.updated_at.isoformat(),
+    }
+
+
+def _classification_to_dict(classification: Classification) -> dict[str, Any]:
+    return {
+        'id': str(classification.id),
+        'name': classification.name,
+        'level': classification.level,
+        'description': classification.description,
+        'tags': classification.tags,
+        'status': classification.status,
+        'created_at': classification.created_at.isoformat(),
+        'updated_at': classification.updated_at.isoformat(),
     }
 
 
@@ -1520,6 +1534,234 @@ def master_merge_candidate_approve(request, entity_type: str, candidate_id: str)
             'record': _master_record_to_dict(merged),
         }
     )
+
+
+@csrf_exempt
+def classifications(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(
+            request,
+            {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+        )
+        if forbidden:
+            return forbidden
+        qs = Classification.objects.order_by('-updated_at')
+        status_filter = request.GET.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return JsonResponse({'items': [_classification_to_dict(item) for item in qs]})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        name = (payload.get('name') or '').strip()
+        if not name:
+            return JsonResponse({'error': 'name is required'}, status=400)
+        level = payload.get('level')
+        if level not in {
+            Classification.Level.PUBLIC,
+            Classification.Level.INTERNAL,
+            Classification.Level.CONFIDENTIAL,
+            Classification.Level.RESTRICTED,
+        }:
+            return JsonResponse({'error': 'invalid_level'}, status=400)
+        tags = _parse_string_list(payload.get('tags'))
+        if tags is None:
+            return JsonResponse({'error': 'tags must be an array of strings'}, status=400)
+
+        classification = Classification.objects.create(
+            name=name,
+            level=level,
+            description=(payload.get('description') or ''),
+            tags=tags,
+            status=Classification.Status.DRAFT,
+        )
+        tenant_schema = _tenant_schema(request)
+        maybe_publish_event(
+            event_type='classification.created',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.classification.created',
+            correlation_id=getattr(request, 'correlation_id', None)
+            or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_classification_to_dict(classification),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        maybe_publish_audit_event(
+            tenant_id=tenant_schema,
+            action='classification.created',
+            resource_type='classification',
+            resource_id=str(classification.id),
+            correlation_id=getattr(request, 'correlation_id', None)
+            or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_classification_to_dict(classification),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        return JsonResponse(_classification_to_dict(classification), status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def classification_detail(request, classification_id: str):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    try:
+        classification = Classification.objects.get(id=classification_id)
+    except (ValidationError, Classification.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    return JsonResponse(_classification_to_dict(classification))
+
+
+@csrf_exempt
+def classification_activate(request, classification_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        classification = Classification.objects.get(id=classification_id)
+    except (ValidationError, Classification.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    classification.status = Classification.Status.ACTIVE
+    classification.save(update_fields=['status', 'updated_at'])
+    tenant_schema = _tenant_schema(request)
+    maybe_publish_event(
+        event_type='classification.activated',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.classification.activated',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_classification_to_dict(classification),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='classification.activated',
+        resource_type='classification',
+        resource_id=str(classification.id),
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_classification_to_dict(classification),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(_classification_to_dict(classification))
+
+
+@csrf_exempt
+def classification_deprecate(request, classification_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        classification = Classification.objects.get(id=classification_id)
+    except (ValidationError, Classification.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    classification.status = Classification.Status.DEPRECATED
+    classification.save(update_fields=['status', 'updated_at'])
+    tenant_schema = _tenant_schema(request)
+    maybe_publish_event(
+        event_type='classification.deprecated',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.classification.deprecated',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_classification_to_dict(classification),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='classification.deprecated',
+        resource_type='classification',
+        resource_id=str(classification.id),
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_classification_to_dict(classification),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(_classification_to_dict(classification))
+
+
+@csrf_exempt
+def asset_classifications(request, asset_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_role(request, 'catalog.editor')
+    if forbidden:
+        return forbidden
+    try:
+        asset = DataAsset.objects.get(id=asset_id)
+    except (ValidationError, DataAsset.DoesNotExist):
+        return JsonResponse({'error': 'asset_not_found'}, status=404)
+    payload = _parse_json_body(request)
+    if payload is None:
+        return JsonResponse({'error': 'invalid_json'}, status=400)
+    classifications_value = _parse_string_list(payload.get('classifications'))
+    if classifications_value is None:
+        return JsonResponse(
+            {'error': 'classifications must be an array of strings'},
+            status=400,
+        )
+    selected = classifications_value or []
+    if selected:
+        active_names = set(
+            Classification.objects.filter(
+                status=Classification.Status.ACTIVE,
+                name__in=selected,
+            ).values_list('name', flat=True)
+        )
+        missing = sorted(set(selected) - active_names)
+        if missing:
+            return JsonResponse(
+                {
+                    'error': 'inactive_or_unknown_classifications',
+                    'items': missing,
+                },
+                status=400,
+            )
+    asset.classifications = selected
+    asset.save(update_fields=['classifications', 'updated_at'])
+    tenant_schema = _tenant_schema(request)
+    maybe_publish_event(
+        event_type='asset.classifications.updated',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.asset.classifications.updated',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_asset_to_dict(asset),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='asset.classifications.updated',
+        resource_type='asset',
+        resource_id=str(asset.id),
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_asset_to_dict(asset),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(_asset_to_dict(asset))
 
 
 @csrf_exempt

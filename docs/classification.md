@@ -29,15 +29,18 @@ Suggested minimal fields:
   * stewardship queues prioritize findings by classification sensitivity
 * Deprecation: remains readable for historical audit context, but is blocked for new assignments.
 
-## API and events (incremental direction)
+## API and events (implemented scaffold slice)
 
-Candidate endpoints:
+Endpoints:
 
 * `POST /api/v1/classifications`
 * `GET /api/v1/classifications/<id>`
 * `GET /api/v1/classifications`
+* `POST /api/v1/classifications/<id>/activate`
+* `POST /api/v1/classifications/<id>/deprecate`
+* `POST /api/v1/assets/<asset_id>/classifications` (assign active classifications)
 
-Candidate events:
+Events:
 
 * `classification.created`
 * `classification.activated`

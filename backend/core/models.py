@@ -303,3 +303,30 @@ class MasterMergeCandidate(models.Model):
     approved_by = models.CharField(max_length=200, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class Classification(models.Model):
+    class Level(models.TextChoices):
+        PUBLIC = 'public'
+        INTERNAL = 'internal'
+        CONFIDENTIAL = 'confidential'
+        RESTRICTED = 'restricted'
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft'
+        ACTIVE = 'active'
+        DEPRECATED = 'deprecated'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    level = models.CharField(max_length=16, choices=Level.choices)
+    description = models.CharField(max_length=512, blank=True, default='')
+    tags = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['name'], name='uniq_classification_name'),
+        ]
