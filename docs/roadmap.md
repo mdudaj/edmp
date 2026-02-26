@@ -12,6 +12,7 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 6. **Eventing conventions**: optional RabbitMQ-backed domain-event publishing and routing-key conventions (see `docs/events.md`).
 7. **Observability baseline**: health/readiness probes and structured logging with correlation ids (see `docs/observability.md`).
 8. **Data residency controls**: tenant-scoped residency profile lifecycle and region allow/deny checks with event/audit conventions (see `docs/residency.md`).
+9. **Data access requests**: tenant-scoped access request/decision lifecycle with status transitions and audit/event conventions (see `docs/access-requests.md`).
 
 ## Near-term (next)
 
@@ -35,7 +36,6 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 * **Collaboration**: define ONLYOFFICE integration and tenant-scoped versioned document lifecycle (see `docs/collaboration.md`).
 * **Notebook infrastructure**: define JupyterHub/KubeSpawner pod isolation and execution event conventions (see `docs/notebooks.md`).
 * **Data privacy management**: define tenant-scoped privacy profiles, consent state handling, and policy/retention integration conventions (see `docs/privacy.md`).
-* **Data access requests**: define tenant-scoped request/approval/revocation conventions for governed asset access (see `docs/access-requests.md`).
 * **Reference data management**: define tenant-scoped reference datasets, change control, and asset linkage conventions (see `docs/reference-data.md`).
 * **Master data management**: define tenant-scoped canonical entity records, survivorship rules, and stewardship conventions (see `docs/master-data.md`).
 * **Data classification taxonomy**: define tenant-scoped sensitivity levels and lifecycle conventions used by policy, retention, and stewardship flows (see `docs/classification.md`).

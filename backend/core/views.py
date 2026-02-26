@@ -9,6 +9,7 @@ from django.db import connection
 from django.db.models import Max, Q
 from django.db.utils import DatabaseError
 from django.http import HttpResponse, JsonResponse
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
@@ -16,6 +17,7 @@ from .events import maybe_publish_audit_event, maybe_publish_event
 from .identity import require_any_role, require_role
 from .metrics import DB_READINESS_ERRORS, metrics_response
 from .models import (
+    AccessRequest,
     ConsentEvent,
     DataAsset,
     DataContract,
@@ -233,6 +235,21 @@ def _residency_profile_to_dict(profile: ResidencyProfile) -> dict[str, Any]:
         'status': profile.status,
         'created_at': profile.created_at.isoformat(),
         'updated_at': profile.updated_at.isoformat(),
+    }
+
+
+def _access_request_to_dict(access_request: AccessRequest) -> dict[str, Any]:
+    return {
+        'id': str(access_request.id),
+        'subject_ref': access_request.subject_ref,
+        'requester': access_request.requester,
+        'access_type': access_request.access_type,
+        'justification': access_request.justification,
+        'status': access_request.status,
+        'approver': access_request.approver or None,
+        'expires_at': access_request.expires_at.isoformat() if access_request.expires_at else None,
+        'created_at': access_request.created_at.isoformat(),
+        'updated_at': access_request.updated_at.isoformat(),
     }
 
 
@@ -870,6 +887,137 @@ def residency_check(request):
     if not allowed and enforced:
         return JsonResponse(response, status=403)
     return JsonResponse(response)
+
+
+@csrf_exempt
+def access_requests(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(request, {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        status_filter = request.GET.get('status')
+        qs = AccessRequest.objects.order_by('-updated_at')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return JsonResponse({'items': [_access_request_to_dict(item) for item in qs]})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(request, {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        subject_ref = (payload.get('subject_ref') or '').strip()
+        requester = (payload.get('requester') or request.headers.get('X-User-Id') or '').strip()
+        access_type = payload.get('access_type')
+        if not subject_ref or not requester or not access_type:
+            return JsonResponse({'error': 'subject_ref, requester, and access_type are required'}, status=400)
+        if access_type not in {
+            AccessRequest.AccessType.READ,
+            AccessRequest.AccessType.WRITE,
+            AccessRequest.AccessType.ADMIN,
+            AccessRequest.AccessType.EXPORT,
+        }:
+            return JsonResponse({'error': 'invalid_access_type'}, status=400)
+        access_request = AccessRequest.objects.create(
+            subject_ref=subject_ref,
+            requester=requester,
+            access_type=access_type,
+            justification=(payload.get('justification') or ''),
+            status=AccessRequest.Status.SUBMITTED,
+        )
+        tenant_schema = _tenant_schema(request)
+        maybe_publish_event(
+            event_type='access.request.submitted',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.access.request.submitted',
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_access_request_to_dict(access_request),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        maybe_publish_audit_event(
+            tenant_id=tenant_schema,
+            action='access.request.submitted',
+            resource_type='access_request',
+            resource_id=str(access_request.id),
+            correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_access_request_to_dict(access_request),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        return JsonResponse(_access_request_to_dict(access_request), status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def access_request_decision(request, request_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        access_request = AccessRequest.objects.get(id=request_id)
+    except (ValidationError, AccessRequest.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    payload = _parse_json_body(request)
+    if payload is None:
+        return JsonResponse({'error': 'invalid_json'}, status=400)
+    status_value = payload.get('status')
+    if status_value not in {
+        AccessRequest.Status.IN_REVIEW,
+        AccessRequest.Status.APPROVED,
+        AccessRequest.Status.DENIED,
+        AccessRequest.Status.REVOKED,
+    }:
+        return JsonResponse({'error': 'invalid_status'}, status=400)
+
+    allowed_transitions = {
+        AccessRequest.Status.SUBMITTED: {AccessRequest.Status.IN_REVIEW, AccessRequest.Status.APPROVED, AccessRequest.Status.DENIED},
+        AccessRequest.Status.IN_REVIEW: {AccessRequest.Status.APPROVED, AccessRequest.Status.DENIED},
+        AccessRequest.Status.APPROVED: {AccessRequest.Status.REVOKED},
+    }
+    if status_value not in allowed_transitions.get(access_request.status, set()):
+        return JsonResponse({'error': 'invalid_transition'}, status=400)
+
+    expires_at = access_request.expires_at
+    if status_value == AccessRequest.Status.APPROVED and 'expires_at' in payload and payload.get('expires_at'):
+        parsed = parse_datetime(str(payload.get('expires_at')))
+        if not parsed:
+            return JsonResponse({'error': 'invalid_expires_at'}, status=400)
+        if timezone.is_naive(parsed):
+            parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+        expires_at = parsed
+
+    access_request.status = status_value
+    access_request.approver = (payload.get('approver') or request.headers.get('X-User-Id') or '').strip()
+    access_request.expires_at = expires_at if status_value == AccessRequest.Status.APPROVED else access_request.expires_at
+    access_request.save(update_fields=['status', 'approver', 'expires_at', 'updated_at'])
+    tenant_schema = _tenant_schema(request)
+    event_type = f'access.request.{status_value}'
+    maybe_publish_event(
+        event_type=event_type,
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.{event_type}',
+        correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_access_request_to_dict(access_request),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action=event_type,
+        resource_type='access_request',
+        resource_id=str(access_request.id),
+        correlation_id=getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_access_request_to_dict(access_request),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(_access_request_to_dict(access_request))
 
 
 @csrf_exempt

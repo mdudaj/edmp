@@ -18,6 +18,8 @@ from django.contrib import admin
 from django.urls import path
 
 from core.views import (
+    access_request_decision,
+    access_requests,
     asset_detail,
     asset_contracts,
     assets,
@@ -61,6 +63,8 @@ urlpatterns = [
     path('api/v1/tenants', tenants, name='tenants'),
     path('api/v1/assets', assets, name='assets'),
     path('api/v1/assets/<uuid:asset_id>', asset_detail, name='asset_detail'),
+    path('api/v1/access-requests', access_requests, name='access_requests'),
+    path('api/v1/access-requests/<uuid:request_id>/decision', access_request_decision, name='access_request_decision'),
     path('api/v1/assets/<uuid:asset_id>/contracts', asset_contracts, name='asset_contracts'),
     path('api/v1/contracts', contracts, name='contracts'),
     path('api/v1/contracts/<uuid:contract_id>', contract_detail, name='contract_detail'),

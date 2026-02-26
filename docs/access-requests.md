@@ -33,14 +33,15 @@ Define a lightweight tenant-scoped workflow for requesting, approving, and audit
 4. Approved requests may include an expiry and are periodically revalidated by retention/governance routines.
 5. All transitions are append-only from an audit perspective.
 
-## API and eventing direction
+## API and eventing (implemented scaffold slice)
 
-* API (future):
-  * `POST /api/v1/access-requests`
-  * `GET /api/v1/access-requests?status=in_review`
-  * `POST /api/v1/access-requests/<request_id>/decision`
+* API:
+  * `POST /api/v1/access-requests` (create request in `submitted`)
+  * `GET /api/v1/access-requests?status=in_review` (optional status filter)
+  * `POST /api/v1/access-requests/<request_id>/decision` with status transitions (`in_review | approved | denied | revoked`)
 * Events:
   * `access.request.submitted`
+  * `access.request.in_review`
   * `access.request.approved`
   * `access.request.denied`
   * `access.request.revoked`

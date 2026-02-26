@@ -199,3 +199,30 @@ class ResidencyProfile(models.Model):
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class AccessRequest(models.Model):
+    class AccessType(models.TextChoices):
+        READ = 'read'
+        WRITE = 'write'
+        ADMIN = 'admin'
+        EXPORT = 'export'
+
+    class Status(models.TextChoices):
+        SUBMITTED = 'submitted'
+        IN_REVIEW = 'in_review'
+        APPROVED = 'approved'
+        DENIED = 'denied'
+        EXPIRED = 'expired'
+        REVOKED = 'revoked'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subject_ref = models.CharField(max_length=512)
+    requester = models.CharField(max_length=200)
+    access_type = models.CharField(max_length=16, choices=AccessType.choices)
+    justification = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.SUBMITTED)
+    approver = models.CharField(max_length=200, blank=True, default='')
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
