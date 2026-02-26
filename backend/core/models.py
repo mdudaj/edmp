@@ -504,3 +504,34 @@ class NotebookExecution(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
     requested_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+
+
+class ConnectorRun(models.Model):
+    class ExecutionPath(models.TextChoices):
+        WORKER = "worker"
+        JOB = "job"
+
+    class Status(models.TextChoices):
+        QUEUED = "queued"
+        RUNNING = "running"
+        SUCCEEDED = "succeeded"
+        FAILED = "failed"
+        CANCELLED = "cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ingestion = models.ForeignKey(
+        IngestionRequest, on_delete=models.CASCADE, related_name="connector_runs"
+    )
+    execution_path = models.CharField(
+        max_length=16, choices=ExecutionPath.choices, default=ExecutionPath.WORKER
+    )
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.QUEUED
+    )
+    retry_count = models.IntegerField(default=0)
+    progress = models.JSONField(default=dict, blank=True)
+    error_message = models.CharField(max_length=512, blank=True, default="")
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)

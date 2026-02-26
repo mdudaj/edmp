@@ -21,6 +21,7 @@ from .models import (
     Classification,
     CollaborationDocument,
     CollaborationDocumentVersion,
+    ConnectorRun,
     ConsentEvent,
     DataAsset,
     DataContract,
@@ -42,7 +43,7 @@ from .models import (
     RetentionRule,
     RetentionRun,
 )
-from .tasks import evaluate_quality_rule, execute_retention_run
+from .tasks import evaluate_quality_rule, execute_connector_run, execute_retention_run
 
 
 def _tenant_schema(request) -> str:
@@ -418,6 +419,22 @@ def _notebook_execution_to_dict(execution: NotebookExecution) -> dict[str, Any]:
         'metadata': execution.metadata,
         'requested_at': execution.requested_at.isoformat(),
         'completed_at': execution.completed_at.isoformat() if execution.completed_at else None,
+    }
+
+
+def _connector_run_to_dict(run: ConnectorRun) -> dict[str, Any]:
+    return {
+        'id': str(run.id),
+        'ingestion_id': str(run.ingestion_id),
+        'execution_path': run.execution_path,
+        'status': run.status,
+        'retry_count': run.retry_count,
+        'progress': run.progress,
+        'error_message': run.error_message or None,
+        'started_at': run.started_at.isoformat() if run.started_at else None,
+        'finished_at': run.finished_at.isoformat() if run.finished_at else None,
+        'created_at': run.created_at.isoformat(),
+        'updated_at': run.updated_at.isoformat(),
     }
 
 
@@ -2841,6 +2858,145 @@ def quality_results(request):
 
 
 @csrf_exempt
+def connector_runs(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(
+            request,
+            {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+        )
+        if forbidden:
+            return forbidden
+        qs = ConnectorRun.objects.order_by('-created_at')
+        ingestion_id = request.GET.get('ingestion_id')
+        if ingestion_id:
+            qs = qs.filter(ingestion_id=ingestion_id)
+        status_filter = request.GET.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return JsonResponse({'items': [_connector_run_to_dict(item) for item in qs]})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(request, {'catalog.editor', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        ingestion_id = payload.get('ingestion_id')
+        if not ingestion_id:
+            return JsonResponse({'error': 'ingestion_id is required'}, status=400)
+        try:
+            ingestion = IngestionRequest.objects.get(id=ingestion_id)
+        except (ValidationError, IngestionRequest.DoesNotExist):
+            return JsonResponse({'error': 'ingestion_not_found'}, status=404)
+
+        execution_path = (
+            payload.get('execution_path') or ConnectorRun.ExecutionPath.WORKER
+        )
+        if execution_path not in {
+            ConnectorRun.ExecutionPath.WORKER,
+            ConnectorRun.ExecutionPath.JOB,
+        }:
+            return JsonResponse({'error': 'invalid_execution_path'}, status=400)
+
+        run = ConnectorRun.objects.create(
+            ingestion=ingestion,
+            execution_path=execution_path,
+            status=ConnectorRun.Status.QUEUED,
+            retry_count=int(payload.get('retry_count') or 0),
+            progress={},
+        )
+        tenant_schema = _tenant_schema(request)
+        maybe_publish_event(
+            event_type='connector.run.queued',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.connector.run.queued',
+            correlation_id=getattr(request, 'correlation_id', None)
+            or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_connector_run_to_dict(run),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        maybe_publish_audit_event(
+            tenant_id=tenant_schema,
+            action='connector.run.queued',
+            resource_type='connector_run',
+            resource_id=str(run.id),
+            correlation_id=getattr(request, 'correlation_id', None)
+            or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=_connector_run_to_dict(run),
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        result = execute_connector_run.apply(
+            kwargs={
+                'tenant_schema': tenant_schema,
+                'run_id': str(run.id),
+                'correlation_id': getattr(request, 'correlation_id', None)
+                or request.headers.get('X-Correlation-Id'),
+                'user_id': request.headers.get('X-User-Id'),
+                'request_id': request.headers.get('X-Request-Id')
+                or request.headers.get('X-Request-ID'),
+            }
+        ).get(propagate=True)
+        refreshed = ConnectorRun.objects.get(id=run.id)
+        return JsonResponse(
+            {'run': _connector_run_to_dict(refreshed), 'result': result},
+            status=201,
+        )
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def connector_run_cancel(request, run_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        run = ConnectorRun.objects.select_related('ingestion').get(id=run_id)
+    except (ValidationError, ConnectorRun.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    if run.status in {
+        ConnectorRun.Status.SUCCEEDED,
+        ConnectorRun.Status.FAILED,
+        ConnectorRun.Status.CANCELLED,
+    }:
+        return JsonResponse({'error': 'run_not_cancellable'}, status=400)
+    run.status = ConnectorRun.Status.CANCELLED
+    run.finished_at = timezone.now()
+    run.error_message = 'cancelled by user'
+    run.save(update_fields=['status', 'finished_at', 'error_message', 'updated_at'])
+    run.ingestion.status = IngestionRequest.Status.FAILED
+    run.ingestion.save(update_fields=['status', 'updated_at'])
+    tenant_schema = _tenant_schema(request)
+    maybe_publish_event(
+        event_type='connector.run.cancelled',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.connector.run.cancelled',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_connector_run_to_dict(run),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='connector.run.cancelled',
+        resource_type='connector_run',
+        resource_id=str(run.id),
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=_connector_run_to_dict(run),
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(_connector_run_to_dict(run))
+
+
+@csrf_exempt
 def ingestions(request):
     """Create tenant-scoped ingestion requests."""
     if request.method == 'POST':
@@ -2899,7 +3055,17 @@ def ingestion_detail(request, ingestion_id: str):
         forbidden = require_any_role(request, {'catalog.reader', 'catalog.editor', 'tenant.admin'})
         if forbidden:
             return forbidden
-        return JsonResponse(_ingestion_to_dict(ing))
+        data = _ingestion_to_dict(ing)
+        latest_run = ing.connector_runs.order_by('-created_at').first()
+        if latest_run:
+            data['execution'] = {
+                'state': latest_run.status,
+                'started_at': latest_run.started_at.isoformat() if latest_run.started_at else None,
+                'finished_at': latest_run.finished_at.isoformat() if latest_run.finished_at else None,
+                'retry_count': latest_run.retry_count,
+                'progress': latest_run.progress,
+            }
+        return JsonResponse(data)
 
     return JsonResponse({'error': 'method_not_allowed'}, status=405)
 

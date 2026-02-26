@@ -40,3 +40,18 @@ The ingestion status endpoint remains the source of truth and should expose:
 
 * Connector SDK standardization across all external systems.
 * Full workflow orchestration DAG semantics.
+
+## API and lifecycle (implemented scaffold slice)
+
+Endpoints:
+
+* `POST /api/v1/connectors/runs`
+* `GET /api/v1/connectors/runs`
+* `POST /api/v1/connectors/runs/<run_id>/cancel`
+* `GET /api/v1/ingestions/<id>` now includes execution state/start-finish/retry/progress when a run exists.
+
+Current behavior:
+
+* Supports execution path selection (`worker` or `job`) at run creation.
+* Connector run transitions through `queued -> running -> succeeded|failed|cancelled`.
+* Run completion updates ingestion status and emits connector run + audit events.

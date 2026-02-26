@@ -7,7 +7,15 @@ from django.utils import timezone
 from .celery import TenantTask
 from .events import maybe_publish_audit_event, maybe_publish_event
 from .logging import get_correlation_id, get_request_id, get_tenant_id, get_user_id
-from .models import DataAsset, QualityCheckResult, QualityRule, RetentionHold, RetentionRun
+from .models import (
+    ConnectorRun,
+    DataAsset,
+    IngestionRequest,
+    QualityCheckResult,
+    QualityRule,
+    RetentionHold,
+    RetentionRun,
+)
 
 
 @shared_task(base=TenantTask)
@@ -174,3 +182,102 @@ def execute_retention_run(*, tenant_schema: str, run_id: str) -> dict[str, int |
         data={'rule_id': str(rule.id), **summary},
     )
     return {'run_id': str(run.id), **summary}
+
+
+@shared_task(base=TenantTask)
+def execute_connector_run(*, tenant_schema: str, run_id: str) -> dict[str, str | int]:
+    run = ConnectorRun.objects.select_related("ingestion").get(id=run_id)
+    ingestion = run.ingestion
+    correlation_id = get_correlation_id()
+    user_id = get_user_id()
+    request_id = get_request_id()
+
+    if run.status == ConnectorRun.Status.CANCELLED:
+        return {"run_id": str(run.id), "status": run.status}
+
+    run.status = ConnectorRun.Status.RUNNING
+    run.started_at = timezone.now()
+    run.save(update_fields=["status", "started_at", "updated_at"])
+    ingestion.status = IngestionRequest.Status.RUNNING
+    ingestion.save(update_fields=["status", "updated_at"])
+
+    maybe_publish_event(
+        event_type="connector.run.started",
+        tenant_id=tenant_schema,
+        routing_key=f"{tenant_schema}.connector.run.started",
+        correlation_id=correlation_id,
+        user_id=user_id,
+        request_id=request_id,
+        data={"run_id": str(run.id), "ingestion_id": str(ingestion.id)},
+    )
+
+    source = ingestion.source or {}
+    force_status = source.get("force_status")
+    processed_entities = int(source.get("processed_entities", 0) or 0)
+    failed_entities = int(source.get("failed_entities", 0) or 0)
+
+    if force_status == "failed":
+        run.status = ConnectorRun.Status.FAILED
+        run.error_message = str(source.get("error_message") or "connector execution failed")
+        ingestion.status = IngestionRequest.Status.FAILED
+    elif force_status == "cancelled":
+        run.status = ConnectorRun.Status.CANCELLED
+        run.error_message = str(source.get("error_message") or "connector execution cancelled")
+        ingestion.status = IngestionRequest.Status.FAILED
+    else:
+        run.status = ConnectorRun.Status.SUCCEEDED
+        ingestion.status = IngestionRequest.Status.COMPLETED
+
+    run.progress = {
+        "processed_entities": processed_entities,
+        "failed_entities": failed_entities,
+    }
+    run.finished_at = timezone.now()
+    run.save(
+        update_fields=[
+            "status",
+            "error_message",
+            "progress",
+            "finished_at",
+            "updated_at",
+        ]
+    )
+    ingestion.save(update_fields=["status", "updated_at"])
+
+    final_event_type = f"connector.run.{run.status}"
+    maybe_publish_event(
+        event_type=final_event_type,
+        tenant_id=tenant_schema,
+        routing_key=f"{tenant_schema}.{final_event_type}",
+        correlation_id=correlation_id,
+        user_id=user_id,
+        request_id=request_id,
+        data={
+            "run_id": str(run.id),
+            "ingestion_id": str(ingestion.id),
+            "status": run.status,
+            "progress": run.progress,
+        },
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action=final_event_type,
+        resource_type="connector_run",
+        resource_id=str(run.id),
+        correlation_id=correlation_id,
+        user_id=user_id,
+        request_id=request_id,
+        data={
+            "ingestion_id": str(ingestion.id),
+            "status": run.status,
+            "progress": run.progress,
+            "error_message": run.error_message,
+        },
+    )
+    return {
+        "run_id": str(run.id),
+        "ingestion_id": str(ingestion.id),
+        "status": run.status,
+        "processed_entities": processed_entities,
+        "failed_entities": failed_entities,
+    }
