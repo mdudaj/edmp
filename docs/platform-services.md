@@ -29,6 +29,24 @@ This note captures the required shared services baseline for the EDMP platform o
 * Keep externalized configuration and secret references per environment.
 * Enforce readiness/liveness contracts before traffic cutover.
 
+## Implemented scaffold baseline
+
+This scaffold now includes a Helm chart at `deploy/helm/edmp-platform` with:
+
+* templated EDMP backend Deployment + Service
+* templated worker Deployment
+* templated migration Job (`migrate_schemas --noinput`)
+* templated PostgreSQL StatefulSet + Service
+* templated RabbitMQ Deployment + Service
+* templated ingress for control-plane and wildcard tenant hosts
+* baseline platform-services ConfigMap for Redis, MinIO, Keycloak, ONLYOFFICE, JupyterHub, Prometheus, Grafana, Loki, and Sentry endpoint wiring
+
+Use this as the default packaging baseline:
+
+```bash
+helm upgrade --install edmp-platform deploy/helm/edmp-platform -n edmp --create-namespace
+```
+
 ## Storage and identity conventions
 
 * MinIO buckets/prefixes are tenant-scoped for document/notebook/object artifacts.

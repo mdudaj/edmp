@@ -1,6 +1,8 @@
 # Kubernetes deployment notes (scaffold)
 
-This project’s backend is designed to run as a stateless service in Kubernetes. The manifests in `deploy/k8s/` are **examples** to help bootstrap the platform design.
+This project's backend is designed to run as a stateless service in Kubernetes. The manifests in `deploy/k8s/` are **examples** to help bootstrap the platform design.
+
+For Helm-managed deployment packaging, use `deploy/helm/edmp-platform`.
 
 ## Health probes
 
@@ -21,6 +23,20 @@ See:
 * `deploy/k8s/ingress.yaml` (example edge routing; control-plane + wildcard tenant hostnames)
 * `deploy/k8s/postgres.yaml` (example dependency; StatefulSet + PVC)
 * `deploy/k8s/rabbitmq.yaml` (example dependency; Deployment)
+
+## Helm packaging baseline
+
+The platform-services increment adds a first-party Helm chart:
+
+* `deploy/helm/edmp-platform/Chart.yaml`
+* `deploy/helm/edmp-platform/values.yaml`
+* `deploy/helm/edmp-platform/templates/*`
+
+Quick start:
+
+```bash
+helm upgrade --install edmp-platform deploy/helm/edmp-platform -n edmp --create-namespace
+```
 
 Notes:
 

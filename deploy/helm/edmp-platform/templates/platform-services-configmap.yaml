@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "edmp-platform.fullname" . }}-platform-services
+  labels:
+    {{- include "edmp-platform.labels" . | nindent 4 }}
+data:
+  REDIS_ENABLED: {{ .Values.platformServices.redis.enabled | quote }}
+  REDIS_ENDPOINT: {{ .Values.platformServices.redis.endpoint | quote }}
+  MINIO_ENABLED: {{ .Values.platformServices.minio.enabled | quote }}
+  MINIO_ENDPOINT: {{ .Values.platformServices.minio.endpoint | quote }}
+  KEYCLOAK_ENABLED: {{ .Values.platformServices.keycloak.enabled | quote }}
+  KEYCLOAK_ISSUER_URL: {{ .Values.platformServices.keycloak.issuerUrl | quote }}
+  ONLYOFFICE_ENABLED: {{ .Values.platformServices.onlyoffice.enabled | quote }}
+  ONLYOFFICE_ENDPOINT: {{ .Values.platformServices.onlyoffice.endpoint | quote }}
+  JUPYTERHUB_ENABLED: {{ .Values.platformServices.jupyterhub.enabled | quote }}
+  JUPYTERHUB_ENDPOINT: {{ .Values.platformServices.jupyterhub.endpoint | quote }}
+  PROMETHEUS_ENABLED: {{ .Values.platformServices.prometheus.enabled | quote }}
+  PROMETHEUS_ENDPOINT: {{ .Values.platformServices.prometheus.endpoint | quote }}
+  GRAFANA_ENABLED: {{ .Values.platformServices.grafana.enabled | quote }}
+  GRAFANA_ENDPOINT: {{ .Values.platformServices.grafana.endpoint | quote }}
+  LOKI_ENABLED: {{ .Values.platformServices.loki.enabled | quote }}
+  LOKI_ENDPOINT: {{ .Values.platformServices.loki.endpoint | quote }}
+  SENTRY_ENABLED: {{ .Values.platformServices.sentry.enabled | quote }}
+  SENTRY_DSN: {{ .Values.platformServices.sentry.dsn | quote }}
