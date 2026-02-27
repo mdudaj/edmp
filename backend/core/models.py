@@ -129,6 +129,34 @@ class DataContract(models.Model):
         ]
 
 
+class AssetVersion(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft"
+        PUBLISHED = "published"
+        SUPERSEDED = "superseded"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    asset = models.ForeignKey(
+        DataAsset, on_delete=models.CASCADE, related_name="versions"
+    )
+    version_number = models.IntegerField()
+    change_summary = models.CharField(max_length=512, blank=True, default="")
+    change_set = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.DRAFT
+    )
+    created_by = models.CharField(max_length=200, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["asset", "version_number"], name="uniq_asset_version_number"
+            ),
+        ]
+
+
 class RetentionRule(models.Model):
     class Action(models.TextChoices):
         ARCHIVE = "archive"

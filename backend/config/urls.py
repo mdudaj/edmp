@@ -23,6 +23,8 @@ from core.views import (
     asset_classifications,
     asset_detail,
     asset_contracts,
+    asset_version_publish,
+    asset_versions,
     assets,
     asset_glossary_term_link,
     contract_activate,
@@ -140,6 +142,12 @@ urlpatterns = [
     path('api/v1/assets', assets, name='assets'),
     path('api/v1/assets/<uuid:asset_id>', asset_detail, name='asset_detail'),
     path('api/v1/assets/<uuid:asset_id>/classifications', asset_classifications, name='asset_classifications'),
+    path('api/v1/assets/<uuid:asset_id>/versions', asset_versions, name='asset_versions'),
+    path(
+        'api/v1/assets/<uuid:asset_id>/versions/<uuid:version_id>/publish',
+        asset_version_publish,
+        name='asset_version_publish',
+    ),
     path(
         'api/v1/assets/<uuid:asset_id>/terms/<uuid:term_id>',
         asset_glossary_term_link,

@@ -43,3 +43,25 @@ Candidate events:
 * `asset_version.superseded`
 
 Use the existing event envelope and tenant-scoped routing conventions from `docs/events.md`.
+
+## Implemented scaffold baseline
+
+Current scaffold implementation includes:
+
+* `POST /api/v1/assets/<asset_id>/versions`
+* `GET /api/v1/assets/<asset_id>/versions`
+* `POST /api/v1/assets/<asset_id>/versions/<version_id>/publish`
+
+Behavior implemented:
+
+* tenant-scoped metadata version model (`version_number`, `change_summary`, `change_set`, `status`, `created_by`)
+* lifecycle states `draft|published|superseded`
+* publish validation gates:
+  * owner must be present from change set or current asset metadata
+  * at least one valid classification must be present
+  * schema changes are blocked when incompatible with the active data contract
+* publish action supersedes previously published versions for the same asset
+* metadata version events and audit events:
+  * `asset_version.created`
+  * `asset_version.published`
+  * `asset_version.superseded`

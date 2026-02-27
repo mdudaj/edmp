@@ -18,6 +18,7 @@ from .identity import require_any_role, require_role
 from .metrics import DB_READINESS_ERRORS, metrics_response
 from .models import (
     AccessRequest,
+    AssetVersion,
     Classification,
     CollaborationDocument,
     CollaborationDocumentVersion,
@@ -103,6 +104,20 @@ def _asset_to_dict(asset: DataAsset) -> dict[str, Any]:
         'properties': asset.properties,
         'created_at': asset.created_at.isoformat(),
         'updated_at': asset.updated_at.isoformat(),
+    }
+
+
+def _asset_version_to_dict(version: AssetVersion) -> dict[str, Any]:
+    return {
+        'id': str(version.id),
+        'asset_id': str(version.asset_id),
+        'version_number': version.version_number,
+        'change_summary': version.change_summary or None,
+        'change_set': version.change_set,
+        'status': version.status,
+        'created_by': version.created_by or None,
+        'created_at': version.created_at.isoformat(),
+        'updated_at': version.updated_at.isoformat(),
     }
 
 
@@ -3057,6 +3072,153 @@ def asset_contracts(request, asset_id: str):
         return forbidden
     contracts_qs = DataContract.objects.filter(asset_id=asset_id).order_by('-version')
     return JsonResponse({'items': [_contract_to_dict(c) for c in contracts_qs]})
+
+
+@csrf_exempt
+def asset_versions(request, asset_id: str):
+    if request.method == 'GET':
+        forbidden = require_any_role(
+            request, {'catalog.reader', 'catalog.editor', 'tenant.admin'}
+        )
+        if forbidden:
+            return forbidden
+        versions = AssetVersion.objects.filter(asset_id=asset_id).order_by('-version_number')
+        return JsonResponse({'items': [_asset_version_to_dict(item) for item in versions]})
+
+    if request.method == 'POST':
+        forbidden = require_role(request, 'catalog.editor')
+        if forbidden:
+            return forbidden
+        try:
+            asset = DataAsset.objects.get(id=asset_id)
+        except (ValidationError, DataAsset.DoesNotExist):
+            return JsonResponse({'error': 'asset_not_found'}, status=404)
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        change_set = payload.get('change_set') or {}
+        if not isinstance(change_set, dict):
+            return JsonResponse({'error': 'change_set must be an object'}, status=400)
+        latest_version = (
+            AssetVersion.objects.filter(asset_id=asset_id).aggregate(max_v=Max('version_number')).get('max_v') or 0
+        )
+        version = AssetVersion.objects.create(
+            asset=asset,
+            version_number=latest_version + 1,
+            change_summary=(payload.get('change_summary') or ''),
+            change_set=change_set,
+            status=AssetVersion.Status.DRAFT,
+            created_by=(request.headers.get('X-User-Id') or ''),
+        )
+        tenant_schema = _tenant_schema(request)
+        data = _asset_version_to_dict(version)
+        maybe_publish_event(
+            event_type='asset_version.created',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.asset_version.created',
+            correlation_id=getattr(request, 'correlation_id', None)
+            or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=data,
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        maybe_publish_audit_event(
+            tenant_id=tenant_schema,
+            action='asset_version.created',
+            resource_type='asset_version',
+            resource_id=str(version.id),
+            correlation_id=getattr(request, 'correlation_id', None)
+            or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=data,
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        return JsonResponse(data, status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def asset_version_publish(request, asset_id: str, version_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        version = AssetVersion.objects.get(id=version_id, asset_id=asset_id)
+    except (ValidationError, AssetVersion.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    if version.status != AssetVersion.Status.DRAFT:
+        return JsonResponse({'error': 'only_draft_versions_can_be_published'}, status=400)
+
+    change_set = version.change_set or {}
+    ownership = change_set.get('ownership') or {}
+    classifications = change_set.get('classifications')
+    effective_owner = ownership.get('owner') if isinstance(ownership, dict) else None
+    if not effective_owner:
+        effective_owner = DataAsset.objects.filter(id=asset_id).values_list('owner', flat=True).first() or ''
+    effective_classifications = (
+        classifications
+        if isinstance(classifications, list)
+        else DataAsset.objects.filter(id=asset_id).values_list('classifications', flat=True).first() or []
+    )
+    if not effective_owner:
+        return JsonResponse({'error': 'owner_required'}, status=400)
+    parsed_classifications = _parse_string_list(effective_classifications)
+    if parsed_classifications is None or not parsed_classifications:
+        return JsonResponse({'error': 'classifications_required'}, status=400)
+    invalid = _validate_classification_values(parsed_classifications)
+    if invalid:
+        return JsonResponse({'error': 'unknown_classifications', 'items': invalid}, status=400)
+
+    schema_change = change_set.get('schema')
+    active_contract = (
+        DataContract.objects.filter(asset_id=asset_id, status=DataContract.Status.ACTIVE).order_by('-version').first()
+    )
+    if schema_change is not None and active_contract is not None and schema_change != active_contract.schema:
+        return JsonResponse({'error': 'contract_incompatible_schema_change'}, status=400)
+
+    AssetVersion.objects.filter(
+        asset_id=asset_id,
+        status=AssetVersion.Status.PUBLISHED,
+    ).exclude(id=version.id).update(status=AssetVersion.Status.SUPERSEDED, updated_at=timezone.now())
+    version.status = AssetVersion.Status.PUBLISHED
+    version.save(update_fields=['status', 'updated_at'])
+    tenant_schema = _tenant_schema(request)
+    data = _asset_version_to_dict(version)
+    maybe_publish_event(
+        event_type='asset_version.published',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.asset_version.published',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='asset_version.published',
+        resource_type='asset_version',
+        resource_id=str(version.id),
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_event(
+        event_type='asset_version.superseded',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.asset_version.superseded',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data={'asset_id': asset_id, 'published_version_id': str(version.id)},
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(data)
 
 
 @csrf_exempt
