@@ -53,6 +53,8 @@ The example manifests assume a Secret named `edmp-backend-secrets` exists with a
 
 * `DJANGO_SECRET_KEY`
 * `POSTGRES_PASSWORD`
+* `CELERY_BROKER_URL`
+* `RABBITMQ_URL`
 
 See `deploy/k8s/secrets.example.yaml` for a placeholder you can adapt.
 

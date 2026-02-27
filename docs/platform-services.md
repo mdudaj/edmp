@@ -40,6 +40,7 @@ This scaffold now includes a Helm chart at `deploy/helm/edmp-platform` with:
 * templated RabbitMQ Deployment + Service
 * templated ingress for control-plane and wildcard tenant hosts
 * baseline platform-services ConfigMap for Redis, MinIO, Keycloak, ONLYOFFICE, JupyterHub, Prometheus, Grafana, Loki, and Sentry endpoint wiring
+* security-default wiring for secret-backed broker URLs, pod/container security contexts, and NetworkPolicy boundaries
 
 Use this as the default packaging baseline:
 

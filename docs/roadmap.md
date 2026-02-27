@@ -23,6 +23,7 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 17. **Workflow engine and UI baseline**: workflow definition/run/task lifecycle with server-side transition role checks (see `docs/workflow-ui.md`).
 18. **Governance depth**: policy lifecycle workflows (review/approve/rollback) and stronger classification controls (see `docs/governance-workflows.md`).
 19. **Platform services baseline**: Helm-managed core service packaging for backend, worker, migrations, ingress, and dependency service wiring (see `docs/platform-services.md`).
+20. **Platform security hardening**: Helm-level secret handling, pod security contexts, and network-policy boundaries for core services (see `docs/platform-security.md`).
 
 ## Near-term (next)
 
@@ -37,7 +38,6 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 
 ## Mid-term
 
-* **Platform security hardening**: formalize mTLS, network-policy boundaries, secret handling, and immutable audit controls (see `docs/platform-security.md`).
 * **Data privacy management**: define tenant-scoped privacy profiles, consent state handling, and policy/retention integration conventions (see `docs/privacy.md`).
 * **Business glossary**: define tenant-scoped business terms, ownership, and asset-linking conventions (see `docs/glossary.md`).
 * **Data products**: define tenant-scoped product metadata, ownership, and lifecycle conventions built on existing catalog and governance foundations (see `docs/data-products.md`).

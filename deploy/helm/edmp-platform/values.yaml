@@ -8,6 +8,8 @@ image:
 
 secrets:
   name: edmp-backend-secrets
+  celeryBrokerUrlKey: CELERY_BROKER_URL
+  rabbitmqUrlKey: RABBITMQ_URL
 
 postgres:
   enabled: true
@@ -51,6 +53,23 @@ ingress:
   className: ""
   controlPlaneHost: control.example.com
   tenantWildcardHost: "*.tenant.example.com"
+
+security:
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+        - ALL
+  networkPolicy:
+    enabled: true
+    ingressNamespaceSelector:
+      key: kubernetes.io/metadata.name
+      value: ingress-nginx
 
 platformServices:
   redis:
