@@ -28,6 +28,7 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 22. **Data products**: tenant-scoped product metadata and lifecycle APIs with activation guardrails tied to active data contracts (see `docs/data-products.md`).
 23. **Data sharing**: tenant-scoped provider/consumer share lifecycle APIs with constraint validation, expiry handling, and revocation conventions (see `docs/data-sharing.md`).
 24. **Metadata versioning**: tenant-scoped asset metadata version lifecycle with draft/publish/supersede flow and publish validation gates (see `docs/metadata-versioning.md`).
+25. **Data privacy management**: tenant-scoped privacy profile, consent, and privacy-action lifecycle APIs with policy/retention/stewardship integration hooks (see `docs/privacy.md`).
 
 ## Near-term (next)
 
@@ -42,7 +43,6 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 
 ## Mid-term
 
-* **Data privacy management**: define tenant-scoped privacy profiles, consent state handling, and policy/retention integration conventions (see `docs/privacy.md`).
 * **Agentic AI execution**: define tenant-scoped tool governance, timeout controls, and execution audit/event conventions (see `docs/agentic-ai.md`).
 * **Self-reflective delivery workflow**: define implementation-agent roles, handoff contracts, retry budgets, and quality gates for faster feature delivery (see `docs/self-reflective-implementation.md`).
 * **Data stewardship operations**: define tenant-scoped stewardship queues, assignment/triage lifecycle, and resolution events across governance domains (see `docs/stewardship.md`).

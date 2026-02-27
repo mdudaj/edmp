@@ -94,6 +94,7 @@ def test_privacy_is_tenant_scoped():
         ).status_code
         == 404
     )
+    assert client.get('/api/v1/privacy/actions', HTTP_HOST=host_b).json()['items'] == []
 
 
 @pytest.mark.django_db(transaction=True)
@@ -152,3 +153,86 @@ def test_privacy_role_enforcement_when_enabled(monkeypatch):
         HTTP_X_USER_ROLES='catalog.editor',
     )
     assert denied_consent.status_code == 403
+
+    created_action = client.post(
+        '/api/v1/privacy/actions',
+        data=json.dumps({'profile_id': profile_id, 'action_type': 'policy.re_evaluate'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='policy.admin',
+    )
+    assert created_action.status_code == 201
+    action_id = created_action.json()['id']
+
+    denied_decision = client.post(
+        f'/api/v1/privacy/actions/{action_id}/decision',
+        data=json.dumps({'decision': 'approve'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert denied_decision.status_code == 403
+
+    allowed_decision = client.post(
+        f'/api/v1/privacy/actions/{action_id}/decision',
+        data=json.dumps({'decision': 'approve'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='tenant.admin',
+    )
+    assert allowed_decision.status_code == 200
+
+
+@pytest.mark.django_db(transaction=True)
+def test_privacy_actions_lifecycle_from_consent_withdrawal():
+    host, _ = _create_tenants()
+    client = Client()
+    created = client.post(
+        '/api/v1/privacy/profiles',
+        data=json.dumps({'name': 'PII profile', 'lawful_basis': 'consent'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+    )
+    profile_id = created.json()['id']
+
+    withdrawn = client.post(
+        '/api/v1/privacy/consent-events',
+        data=json.dumps(
+            {
+                'profile_id': profile_id,
+                'consent_state': 'withdrawn',
+                'reason': 'user request',
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+    )
+    assert withdrawn.status_code == 201
+
+    actions = client.get(
+        f'/api/v1/privacy/actions?profile_id={profile_id}',
+        HTTP_HOST=host,
+    )
+    assert actions.status_code == 200
+    assert len(actions.json()['items']) == 3
+    action = actions.json()['items'][0]
+    assert action['status'] == 'requested'
+
+    approved = client.post(
+        f"/api/v1/privacy/actions/{action['id']}/decision",
+        data=json.dumps({'decision': 'approve'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+    )
+    assert approved.status_code == 200
+    assert approved.json()['status'] == 'approved'
+
+    executed = client.post(
+        f"/api/v1/privacy/actions/{action['id']}/execute",
+        data=json.dumps({'evidence': {'ticket': 'PRIV-101'}}),
+        content_type='application/json',
+        HTTP_HOST=host,
+    )
+    assert executed.status_code == 200
+    assert executed.json()['status'] == 'executed'
+    assert executed.json()['evidence'] == {'ticket': 'PRIV-101'}

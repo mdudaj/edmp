@@ -39,6 +39,28 @@ Add optional privacy fields on governed assets and related governance records:
   * `privacy.consent.changed`
   * `privacy.action.required`
 
+## Implemented scaffold baseline
+
+Current scaffold implementation includes:
+
+* `GET/POST /api/v1/privacy/profiles`
+* `GET/PATCH /api/v1/privacy/profiles/<privacy_profile_id>`
+* `GET/POST /api/v1/privacy/consent-events`
+* `GET/POST /api/v1/privacy/actions`
+* `POST /api/v1/privacy/actions/<action_id>/decision`
+* `POST /api/v1/privacy/actions/<action_id>/execute`
+
+Behavior implemented:
+
+* tenant-scoped privacy profiles with lawful basis, consent requirements, consent state, and privacy flags
+* immutable consent events with profile state synchronization
+* consent withdrawn/expired integration hooks that create privacy action records for:
+  * `policy.re_evaluate`
+  * `retention.review`
+  * `stewardship.triage`
+* privacy action lifecycle states `requested|approved|rejected|executed` with decision and execution evidence capture
+* privacy events and audit conventions for profile, consent, and action lifecycle transitions
+
 ## Non-goals (this increment)
 
 * Jurisdiction-specific legal interpretation automation.

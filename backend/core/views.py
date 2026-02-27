@@ -38,6 +38,7 @@ from .models import (
     NotebookExecution,
     NotebookSession,
     NotebookWorkspace,
+    PrivacyAction,
     PrivacyProfile,
     PrintJob,
     ReferenceDataset,
@@ -300,6 +301,21 @@ def _consent_event_to_dict(event: ConsentEvent) -> dict[str, Any]:
         'consent_state': event.consent_state,
         'reason': event.reason,
         'created_at': event.created_at.isoformat(),
+    }
+
+
+def _privacy_action_to_dict(action: PrivacyAction) -> dict[str, Any]:
+    return {
+        'id': str(action.id),
+        'profile_id': str(action.profile_id),
+        'action_type': action.action_type,
+        'status': action.status,
+        'reason': action.reason or None,
+        'actor_id': action.actor_id or None,
+        'evidence': action.evidence,
+        'requested_at': action.requested_at.isoformat(),
+        'decided_at': action.decided_at.isoformat() if action.decided_at else None,
+        'executed_at': action.executed_at.isoformat() if action.executed_at else None,
     }
 
 
@@ -1038,6 +1054,17 @@ def privacy_consent_events(request):
             rabbitmq_url=os.environ.get('RABBITMQ_URL'),
         )
         if consent_state in {ConsentEvent.ConsentState.WITHDRAWN, ConsentEvent.ConsentState.EXPIRED}:
+            action_types = ['policy.re_evaluate', 'retention.review', 'stewardship.triage']
+            actions = [
+                PrivacyAction.objects.create(
+                    profile=profile,
+                    action_type=action_type,
+                    status=PrivacyAction.Status.REQUESTED,
+                    reason=payload.get('reason') or '',
+                    actor_id=(request.headers.get('X-User-Id') or ''),
+                )
+                for action_type in action_types
+            ]
             maybe_publish_event(
                 event_type='privacy.action.required',
                 tenant_id=tenant_schema,
@@ -1047,13 +1074,164 @@ def privacy_consent_events(request):
                 data={
                     'profile_id': str(profile.id),
                     'consent_state': consent_state,
-                    'actions': ['policy.re_evaluate', 'retention.review', 'stewardship.triage'],
+                    'actions': action_types,
+                    'action_ids': [str(action.id) for action in actions],
                 },
                 rabbitmq_url=os.environ.get('RABBITMQ_URL'),
             )
         return JsonResponse(_consent_event_to_dict(event), status=201)
 
     return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def privacy_actions(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(
+            request, {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'}
+        )
+        if forbidden:
+            return forbidden
+        qs = PrivacyAction.objects.order_by('-requested_at')
+        profile_id = request.GET.get('profile_id')
+        if profile_id:
+            qs = qs.filter(profile_id=profile_id)
+        status_filter = request.GET.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        action_type = request.GET.get('action_type')
+        if action_type:
+            qs = qs.filter(action_type=action_type)
+        return JsonResponse({'items': [_privacy_action_to_dict(item) for item in qs]})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        profile_id = payload.get('profile_id')
+        action_type = (payload.get('action_type') or '').strip()
+        if not profile_id or not action_type:
+            return JsonResponse({'error': 'profile_id and action_type are required'}, status=400)
+        try:
+            profile = PrivacyProfile.objects.get(id=profile_id)
+        except (ValidationError, PrivacyProfile.DoesNotExist):
+            return JsonResponse({'error': 'profile_not_found'}, status=404)
+        action = PrivacyAction.objects.create(
+            profile=profile,
+            action_type=action_type,
+            status=PrivacyAction.Status.REQUESTED,
+            reason=payload.get('reason') or '',
+            actor_id=(request.headers.get('X-User-Id') or ''),
+        )
+        return JsonResponse(_privacy_action_to_dict(action), status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def privacy_action_decision(request, action_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        action = PrivacyAction.objects.get(id=action_id)
+    except (ValidationError, PrivacyAction.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    payload = _parse_json_body(request)
+    if payload is None:
+        return JsonResponse({'error': 'invalid_json'}, status=400)
+    decision = payload.get('decision')
+    if decision not in {'approve', 'reject'}:
+        return JsonResponse({'error': 'invalid_decision'}, status=400)
+    if action.status != PrivacyAction.Status.REQUESTED:
+        return JsonResponse({'error': 'action_not_pending'}, status=400)
+    action.status = (
+        PrivacyAction.Status.APPROVED if decision == 'approve' else PrivacyAction.Status.REJECTED
+    )
+    action.reason = payload.get('reason') or action.reason
+    action.actor_id = request.headers.get('X-User-Id') or action.actor_id
+    action.decided_at = timezone.now()
+    action.save(update_fields=['status', 'reason', 'actor_id', 'decided_at'])
+    tenant_schema = _tenant_schema(request)
+    event_type = f'privacy.action.{action.status}'
+    payload_data = _privacy_action_to_dict(action)
+    maybe_publish_event(
+        event_type=event_type,
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.{event_type}',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=payload_data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action=event_type,
+        resource_type='privacy_action',
+        resource_id=str(action.id),
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=payload_data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(payload_data)
+
+
+@csrf_exempt
+def privacy_action_execute(request, action_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        action = PrivacyAction.objects.get(id=action_id)
+    except (ValidationError, PrivacyAction.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    if action.status != PrivacyAction.Status.APPROVED:
+        return JsonResponse({'error': 'action_not_approved'}, status=400)
+    payload = _parse_json_body(request)
+    if payload is None:
+        return JsonResponse({'error': 'invalid_json'}, status=400)
+    evidence = payload.get('evidence') or {}
+    if not isinstance(evidence, dict):
+        return JsonResponse({'error': 'evidence must be an object'}, status=400)
+    action.evidence = evidence
+    action.actor_id = request.headers.get('X-User-Id') or action.actor_id
+    action.status = PrivacyAction.Status.EXECUTED
+    action.executed_at = timezone.now()
+    action.save(update_fields=['evidence', 'actor_id', 'status', 'executed_at'])
+    tenant_schema = _tenant_schema(request)
+    payload_data = _privacy_action_to_dict(action)
+    maybe_publish_event(
+        event_type='privacy.action.executed',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.privacy.action.executed',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=payload_data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='privacy.action.executed',
+        resource_type='privacy_action',
+        resource_id=str(action.id),
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=payload_data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(payload_data)
 
 
 @csrf_exempt

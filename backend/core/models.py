@@ -238,6 +238,29 @@ class ConsentEvent(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class PrivacyAction(models.Model):
+    class Status(models.TextChoices):
+        REQUESTED = "requested"
+        APPROVED = "approved"
+        REJECTED = "rejected"
+        EXECUTED = "executed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    profile = models.ForeignKey(
+        PrivacyProfile, on_delete=models.CASCADE, related_name="actions"
+    )
+    action_type = models.CharField(max_length=64)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.REQUESTED
+    )
+    reason = models.CharField(max_length=512, blank=True, default="")
+    actor_id = models.CharField(max_length=200, blank=True, default="")
+    evidence = models.JSONField(default=dict, blank=True)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    executed_at = models.DateTimeField(null=True, blank=True)
+
+
 class ResidencyProfile(models.Model):
     class EnforcementMode(models.TextChoices):
         ADVISORY = "advisory"
