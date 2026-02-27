@@ -657,3 +657,25 @@ class GlossaryTerm(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["name"], name="uniq_glossary_term_name"),
         ]
+
+
+class DataProduct(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft"
+        ACTIVE = "active"
+        RETIRED = "retired"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    domain = models.CharField(max_length=200, blank=True, default="")
+    owner = models.CharField(max_length=200, blank=True, default="")
+    asset_ids = models.JSONField(default=list, blank=True)
+    sla = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["name"], name="uniq_data_product_name"),
+        ]

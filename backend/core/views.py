@@ -25,6 +25,7 @@ from .models import (
     ConsentEvent,
     DataAsset,
     DataContract,
+    DataProduct,
     GlossaryTerm,
     GovernancePolicy,
     GovernancePolicyTransition,
@@ -118,6 +119,19 @@ def _parse_string_list(value: Any) -> list[str] | None:
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         return None
     return value
+
+
+def _parse_uuid_string_list(value: Any) -> list[str] | None:
+    parsed = _parse_string_list(value)
+    if parsed is None:
+        return None
+    normalized = []
+    for item in parsed:
+        try:
+            normalized.append(str(uuid.UUID(item)))
+        except ValueError:
+            return None
+    return normalized
 
 
 CLASSIFICATION_SENSITIVITY = {
@@ -538,6 +552,20 @@ def _glossary_term_to_dict(term: GlossaryTerm) -> dict[str, Any]:
         'classifications': term.classifications,
         'created_at': term.created_at.isoformat(),
         'updated_at': term.updated_at.isoformat(),
+    }
+
+
+def _data_product_to_dict(product: DataProduct) -> dict[str, Any]:
+    return {
+        'id': str(product.id),
+        'name': product.name,
+        'domain': product.domain or None,
+        'owner': product.owner or None,
+        'asset_ids': product.asset_ids,
+        'sla': product.sla,
+        'status': product.status,
+        'created_at': product.created_at.isoformat(),
+        'updated_at': product.updated_at.isoformat(),
     }
 
 
@@ -2971,6 +2999,199 @@ def quality_results(request):
         qs = qs.filter(rule__asset_id=asset_id)
     items = [_quality_result_to_dict(r) for r in qs[offset : offset + limit]]
     return JsonResponse({'items': items})
+
+
+@csrf_exempt
+def data_products(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(
+            request,
+            {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+        )
+        if forbidden:
+            return forbidden
+        qs = DataProduct.objects.order_by('-updated_at')
+        status_filter = request.GET.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return JsonResponse({'items': [_data_product_to_dict(item) for item in qs]})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(
+            request,
+            {'catalog.editor', 'policy.admin', 'tenant.admin'},
+        )
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        name = (payload.get('name') or '').strip()
+        if not name:
+            return JsonResponse({'error': 'name is required'}, status=400)
+        if DataProduct.objects.filter(name=name).exists():
+            return JsonResponse({'error': 'name_already_exists'}, status=409)
+
+        asset_ids = _parse_uuid_string_list(payload.get('asset_ids'))
+        if asset_ids is None:
+            return JsonResponse({'error': 'asset_ids must be an array of UUID strings'}, status=400)
+        existing_asset_ids = {
+            str(asset_id) for asset_id in DataAsset.objects.filter(id__in=asset_ids).values_list('id', flat=True)
+        }
+        missing_asset_ids = sorted(set(asset_ids) - existing_asset_ids)
+        if missing_asset_ids:
+            return JsonResponse({'error': 'asset_not_found', 'asset_ids': missing_asset_ids}, status=400)
+
+        sla = payload.get('sla') or {}
+        if not isinstance(sla, dict):
+            return JsonResponse({'error': 'sla must be an object'}, status=400)
+        product = DataProduct.objects.create(
+            name=name,
+            domain=(payload.get('domain') or ''),
+            owner=(payload.get('owner') or ''),
+            asset_ids=asset_ids,
+            sla=sla,
+            status=DataProduct.Status.DRAFT,
+        )
+        tenant_schema = _tenant_schema(request)
+        data = _data_product_to_dict(product)
+        maybe_publish_event(
+            event_type='data_product.created',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.data_product.created',
+            correlation_id=getattr(request, 'correlation_id', None)
+            or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=data,
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        maybe_publish_audit_event(
+            tenant_id=tenant_schema,
+            action='data_product.created',
+            resource_type='data_product',
+            resource_id=str(product.id),
+            correlation_id=getattr(request, 'correlation_id', None)
+            or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=data,
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        return JsonResponse(data, status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def data_product_detail(request, product_id: str):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    try:
+        product = DataProduct.objects.get(id=product_id)
+    except (ValidationError, DataProduct.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    return JsonResponse(_data_product_to_dict(product))
+
+
+@csrf_exempt
+def data_product_activate(request, product_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        product = DataProduct.objects.get(id=product_id)
+    except (ValidationError, DataProduct.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    if not product.owner:
+        return JsonResponse({'error': 'owner_required'}, status=400)
+    if not product.asset_ids:
+        return JsonResponse({'error': 'asset_ids_required'}, status=400)
+
+    missing_contracts = []
+    for asset_id in product.asset_ids:
+        has_active_contract = DataContract.objects.filter(
+            asset_id=asset_id,
+            status=DataContract.Status.ACTIVE,
+        ).exists()
+        if not has_active_contract:
+            missing_contracts.append(asset_id)
+    if missing_contracts:
+        return JsonResponse(
+            {'error': 'missing_active_contracts', 'asset_ids': missing_contracts},
+            status=400,
+        )
+    product.status = DataProduct.Status.ACTIVE
+    product.save(update_fields=['status', 'updated_at'])
+    tenant_schema = _tenant_schema(request)
+    data = _data_product_to_dict(product)
+    maybe_publish_event(
+        event_type='data_product.activated',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.data_product.activated',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='data_product.activated',
+        resource_type='data_product',
+        resource_id=str(product.id),
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(data)
+
+
+@csrf_exempt
+def data_product_retire(request, product_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        product = DataProduct.objects.get(id=product_id)
+    except (ValidationError, DataProduct.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    product.status = DataProduct.Status.RETIRED
+    product.save(update_fields=['status', 'updated_at'])
+    tenant_schema = _tenant_schema(request)
+    data = _data_product_to_dict(product)
+    maybe_publish_event(
+        event_type='data_product.retired',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.data_product.retired',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='data_product.retired',
+        resource_type='data_product',
+        resource_id=str(product.id),
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(data)
 
 
 @csrf_exempt

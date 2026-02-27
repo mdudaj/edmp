@@ -25,6 +25,7 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 19. **Platform services baseline**: Helm-managed core service packaging for backend, worker, migrations, ingress, and dependency service wiring (see `docs/platform-services.md`).
 20. **Platform security hardening**: Helm-level secret handling, pod security contexts, and network-policy boundaries for core services (see `docs/platform-security.md`).
 21. **Business glossary**: tenant-scoped term lifecycle, ownership, and asset-linking APIs with glossary event/audit conventions (see `docs/glossary.md`).
+22. **Data products**: tenant-scoped product metadata and lifecycle APIs with activation guardrails tied to active data contracts (see `docs/data-products.md`).
 
 ## Near-term (next)
 
@@ -40,7 +41,6 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 ## Mid-term
 
 * **Data privacy management**: define tenant-scoped privacy profiles, consent state handling, and policy/retention integration conventions (see `docs/privacy.md`).
-* **Data products**: define tenant-scoped product metadata, ownership, and lifecycle conventions built on existing catalog and governance foundations (see `docs/data-products.md`).
 * **Data sharing**: define tenant-scoped provider/consumer share lifecycle, constraint handling, and revocation conventions for governed distribution (see `docs/data-sharing.md`).
 * **Metadata versioning**: define tenant-scoped draft/publish/supersede conventions for auditable metadata evolution (see `docs/metadata-versioning.md`).
 * **Agentic AI execution**: define tenant-scoped tool governance, timeout controls, and execution audit/event conventions (see `docs/agentic-ai.md`).

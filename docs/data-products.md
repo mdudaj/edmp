@@ -44,3 +44,25 @@ Candidate events:
 * `data_product.retired`
 
 Use the existing event envelope and tenant-scoped routing conventions from `docs/events.md`.
+
+## Implemented scaffold baseline
+
+Current scaffold implementation includes:
+
+* `GET/POST /api/v1/data-products`
+* `GET /api/v1/data-products/<product_id>`
+* `POST /api/v1/data-products/<product_id>/activate`
+* `POST /api/v1/data-products/<product_id>/retire`
+
+Behavior implemented:
+
+* tenant-scoped data product metadata (`name`, `domain`, `owner`, `asset_ids`, `sla`, `status`)
+* activation guardrails:
+  * owner is required
+  * at least one asset is required
+  * each linked asset must have an active data contract before activation
+* lifecycle states `draft|active|retired`
+* data product events and audit events:
+  * `data_product.created`
+  * `data_product.activated`
+  * `data_product.retired`
