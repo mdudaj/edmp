@@ -43,17 +43,22 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 37. **Operational dashboards and alert rules**: defined dashboard panels for API/worker/queue health, alert severities and thresholds, and explicit alert-to-runbook triage mappings (see `docs/operations-dashboards-alerts.md`).
 38. **API contract drift gates and consumer safety checks**: added OpenAPI-to-route/schema drift checks, expanded critical contract regression tests, and standardized API change/deprecation communication checklist (see `docs/api-versioning.md` and `docs/api-change-management.md`).
 39. **Project membership invitation workflow**: added project role invites (`principal_investigator`, `researcher`, `data_manager`) with existing-user notifications, one-time login invite links for new users, and acceptance flow (see `docs/project-membership.md`).
+40. **Audit events**: added consistent audit event emission for mutating actions across core APIs with documented payload shape and validation gates (see `docs/audit.md`).
+41. **Policy enforcement**: added role-based authorization checks for API handlers and transition endpoints, integrated with identity context (see `docs/policy.md`).
+42. **Request context propagation**: added correlation/user/request/tenant context capture and propagation across middleware, logging, events, and tenant Celery tasks (see `docs/request-context.md`).
+43. **Search**: added tenant-scoped metadata search endpoint with query normalization and role checks (see `docs/search.md`).
+44. **Metrics**: added Prometheus `/metrics` endpoint with API and worker instrumentation baseline (see `docs/metrics.md`).
+45. **Data quality**: added tenant-scoped quality rule lifecycle and evaluation result APIs with quality event/audit conventions (see `docs/data-quality.md`).
+46. **Data contracts**: added tenant-scoped contract lifecycle APIs with activation/deprecation and producer-consumer compatibility guardrails (see `docs/data-contracts.md`).
+47. **Retention lifecycle**: added tenant-scoped retention rule/hold/run APIs with release flow and archive/delete execution conventions (see `docs/retention.md`).
 
 ## Near-term (next)
 
-1. **Audit events**: emit consistent audit events for mutating actions (tenants, assets, lineage, policies) (see `docs/audit.md`).
-2. **Policy enforcement**: RBAC/ABAC checks in API handlers and background tasks, integrated with identity (see `docs/policy.md`).
-3. **Request context propagation**: define correlation/user/tenant context capture and async propagation conventions (see `docs/request-context.md`).
-4. **Search**: metadata search (indexing strategy + query API) while keeping tenant isolation intact (see `docs/search.md`).
-5. **Metrics**: add `/metrics` (Prometheus) and define initial SLOs for API and worker workloads (see `docs/metrics.md`).
-6. **Data quality**: define tenant-scoped quality rules, evaluation lifecycle, and result/event conventions (see `docs/data-quality.md`).
-7. **Data contracts**: define tenant-scoped schema/expectation contracts and lifecycle conventions for producer-consumer alignment (see `docs/data-contracts.md`).
-8. **Retention lifecycle**: define tenant-scoped retention rules, hold/approval flow, and archive/delete event conventions (see `docs/retention.md`).
+1. **Identity lifecycle expansion**: add first-class user directory/profile state and membership lifecycle APIs to support invites, revocations, and role history.
+2. **Notification delivery hardening**: add pluggable provider delivery (email/webhook), retries, and dead-letter handling for user/project notifications.
+3. **Invitation security hardening**: add explicit invite revoke/resend endpoints, token hashing-at-rest, and strict TTL/attempt policies.
+4. **Scalability follow-through**: add DB indexes and load-profile checks for high-volume operational endpoints.
+5. **CI/test throughput optimization**: reduce local/CI feedback time with focused suites and shard improvements.
 
 ## Mid-term
 
