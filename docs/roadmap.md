@@ -33,6 +33,7 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 27. **Data stewardship operations**: tenant-scoped stewardship queue item APIs with assignment/triage/resolution lifecycle and stewardship event/audit conventions (see `docs/stewardship.md`).
 28. **Workflow orchestration**: lightweight tenant-scoped orchestration workflow/run APIs with schedule/event triggers, connector-backed step execution, and orchestration event/audit conventions (see `docs/orchestration.md`).
 29. **User interface expansion tracking**: defined next UI phase scope, API-to-UI mappings, role visibility matrix, tenant isolation scenarios, and acceptance checks for operational dashboards (see `docs/workflow-ui.md`).
+30. **API versioning conventions**: documented version/deprecation policy, migration guidance, and response contract regression checks (see `docs/api-versioning.md`).
 
 ## Near-term (next)
 

@@ -53,6 +53,7 @@ INSTALLED_APPS = SHARED_APPS + TENANT_APPS
 
 MIDDLEWARE = [
     'core.middleware.CorrelationIdMiddleware',
+    'core.middleware.ApiVersionMiddleware',
     'tenants.middleware.EDMPTenantMiddleware',
     'core.middleware.RequestContextMiddleware',
     'core.metrics.MetricsMiddleware',

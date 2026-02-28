@@ -1,5 +1,7 @@
 import uuid
 
+from django.http import JsonResponse
+
 from .logging import correlation_id_var, request_id_var, tenant_id_var, user_id_var
 
 
@@ -17,6 +19,30 @@ class CorrelationIdMiddleware:
             return response
         finally:
             correlation_id_var.reset(token)
+
+
+class ApiVersionMiddleware:
+    SUPPORTED_VERSION = 'v1'
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.path.startswith('/api/'):
+            requested_version = request.headers.get('X-API-Version')
+            if requested_version and requested_version != self.SUPPORTED_VERSION:
+                response = JsonResponse(
+                    {
+                        'error': 'unsupported_api_version',
+                        'supported_versions': [self.SUPPORTED_VERSION],
+                    },
+                    status=400,
+                )
+            else:
+                response = self.get_response(request)
+            response['X-API-Version'] = self.SUPPORTED_VERSION
+            return response
+        return self.get_response(request)
 
 
 class RequestContextMiddleware:

@@ -70,6 +70,9 @@ For a short prioritized list, see [docs/roadmap.md](roadmap.md).
 * Prefer JSON-only endpoints with explicit error payloads: `{"error": "<code>"}`.
 * Tenant-scoped APIs require tenant resolution via hostname (`EDMPTenantMiddleware`).
 * Public/control-plane APIs continue to bypass tenant resolution (e.g. `/api/v1/tenants`).
+* API requests may include `X-API-Version`; unsupported versions are rejected.
+* API responses include `X-API-Version` for compatibility diagnostics.
+* See [API versioning policy](api-versioning.md) for deprecation and migration rules.
 * See `docs/openapi.yaml` for the current HTTP surface (scaffold).
 
 ### Identity & access (authn/authz)

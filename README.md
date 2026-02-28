@@ -10,6 +10,7 @@ This repository contains an initial scaffold for a Kubernetes-native, multi-tena
 * [Governance & policy](docs/governance.md)
 * [Governance workflows](docs/governance-workflows.md)
 * [Workflow engine and UI](docs/workflow-ui.md)
+* [API versioning policy](docs/api-versioning.md)
 * [Data privacy management](docs/privacy.md)
 * [Data residency controls](docs/residency.md)
 * [Data access requests](docs/access-requests.md)
