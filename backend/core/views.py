@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -783,8 +784,12 @@ def _project_invitation_to_dict(invitation: ProjectInvitation) -> dict[str, Any]
         'email': invitation.email,
         'role': invitation.role,
         'status': invitation.status,
+        'token_attempts': invitation.token_attempts,
+        'max_token_attempts': invitation.max_token_attempts,
         'expires_at': invitation.expires_at.isoformat(),
         'accepted_at': invitation.accepted_at.isoformat() if invitation.accepted_at else None,
+        'revoked_at': invitation.revoked_at.isoformat() if invitation.revoked_at else None,
+        'resent_at': invitation.resent_at.isoformat() if invitation.resent_at else None,
         'invited_by': invitation.invited_by or None,
         'accepted_by': invitation.accepted_by or None,
         'created_at': invitation.created_at.isoformat(),
@@ -836,6 +841,28 @@ def _notification_to_dict(notification: UserNotification) -> dict[str, Any]:
         'read_at': notification.read_at.isoformat() if notification.read_at else None,
         'created_at': notification.created_at.isoformat(),
     }
+
+
+def _hash_invitation_token(token: str) -> str:
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def _invite_ttl_minutes() -> int:
+    raw = os.environ.get('EDMP_INVITE_TTL_MINUTES', '10080')
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 10080
+    return min(max(parsed, 5), 43200)
+
+
+def _invite_max_attempts() -> int:
+    raw = os.environ.get('EDMP_INVITE_MAX_ATTEMPTS', '5')
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 5
+    return min(max(parsed, 1), 20)
 
 
 def _glossary_term_to_dict(term: GlossaryTerm) -> dict[str, Any]:
@@ -5471,7 +5498,8 @@ def project_member_invites(request, project_id: str):
             status=201,
         )
 
-    expires_minutes = 60 * 24 * 7
+    raw_token = uuid.uuid4().hex
+    expires_minutes = _invite_ttl_minutes()
     UserProfile.objects.get_or_create(
         email=email,
         defaults={
@@ -5483,12 +5511,13 @@ def project_member_invites(request, project_id: str):
         project=project,
         email=email,
         role=role,
-        token=uuid.uuid4().hex,
+        token=_hash_invitation_token(raw_token),
+        max_token_attempts=_invite_max_attempts(),
         invited_by=user_id,
         expires_at=timezone.now() + timedelta(minutes=expires_minutes),
     )
     app_base_url = os.environ.get('EDMP_APP_BASE_URL', 'http://localhost:8000').rstrip('/')
-    invite_link = f'{app_base_url}/invite-login?token={invitation.token}'
+    invite_link = f'{app_base_url}/invite-login?token={raw_token}'
     notification = UserNotification.objects.create(
         user_email=email,
         notification_type='project_membership_invite_link',
@@ -5552,16 +5581,27 @@ def project_invitation_accept(request):
     token = (payload.get('token') or '').strip()
     if not token:
         return JsonResponse({'error': 'token is required'}, status=400)
+    token_hash = _hash_invitation_token(token)
     try:
-        invitation = ProjectInvitation.objects.select_related('project').get(token=token)
+        invitation = ProjectInvitation.objects.select_related('project').get(
+            Q(token=token_hash) | Q(token=token)
+        )
     except ProjectInvitation.DoesNotExist:
         return JsonResponse({'error': 'invitation_not_found'}, status=404)
+    if invitation.status == ProjectInvitation.Status.REVOKED:
+        return JsonResponse({'error': 'invitation_revoked'}, status=400)
     if invitation.status != ProjectInvitation.Status.PENDING:
         return JsonResponse({'error': 'invitation_not_pending'}, status=400)
     if invitation.expires_at <= timezone.now():
         invitation.status = ProjectInvitation.Status.EXPIRED
         invitation.save(update_fields=['status', 'updated_at'])
         return JsonResponse({'error': 'invitation_expired'}, status=400)
+    invitation.token_attempts += 1
+    if invitation.token_attempts > invitation.max_token_attempts:
+        invitation.status = ProjectInvitation.Status.REVOKED
+        invitation.revoked_at = timezone.now()
+        invitation.save(update_fields=['token_attempts', 'status', 'revoked_at', 'updated_at'])
+        return JsonResponse({'error': 'invitation_attempt_limit_exceeded'}, status=400)
 
     accepted_by = (payload.get('user_id') or request.headers.get('X-User-Id') or invitation.email).strip()
     profile, _ = UserProfile.objects.get_or_create(
@@ -5587,7 +5627,7 @@ def project_invitation_accept(request):
     invitation.status = ProjectInvitation.Status.ACCEPTED
     invitation.accepted_by = accepted_by
     invitation.accepted_at = timezone.now()
-    invitation.save(update_fields=['status', 'accepted_by', 'accepted_at', 'updated_at'])
+    invitation.save(update_fields=['status', 'accepted_by', 'accepted_at', 'token_attempts', 'updated_at'])
 
     tenant_schema = _tenant_schema(request)
     correlation_id = getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id')
@@ -5619,6 +5659,134 @@ def project_invitation_accept(request):
     return JsonResponse(
         {
             'membership': _project_membership_to_dict(membership),
+            'invitation': _project_invitation_to_dict(invitation),
+        }
+    )
+
+
+@csrf_exempt
+def project_invitation_revoke(request, invitation_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'catalog.editor', 'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        invitation = ProjectInvitation.objects.select_related('project').get(id=invitation_id)
+    except (ValidationError, ProjectInvitation.DoesNotExist):
+        return JsonResponse({'error': 'invitation_not_found'}, status=404)
+    if invitation.status == ProjectInvitation.Status.ACCEPTED:
+        return JsonResponse({'error': 'invitation_already_accepted'}, status=400)
+    invitation.status = ProjectInvitation.Status.REVOKED
+    invitation.revoked_at = timezone.now()
+    invitation.save(update_fields=['status', 'revoked_at', 'updated_at'])
+    tenant_schema = _tenant_schema(request)
+    correlation_id = getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id')
+    actor_id = request.headers.get('X-User-Id')
+    event_data = {'invitation': _project_invitation_to_dict(invitation)}
+    maybe_publish_event(
+        event_type='project.invitation.revoked',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.project.invitation.revoked',
+        correlation_id=correlation_id,
+        user_id=actor_id,
+        data=event_data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='project.invitation.revoked',
+        resource_type='project',
+        resource_id=str(invitation.project_id),
+        correlation_id=correlation_id,
+        user_id=actor_id,
+        data=event_data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse({'invitation': _project_invitation_to_dict(invitation)})
+
+
+@csrf_exempt
+def project_invitation_resend(request, invitation_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'catalog.editor', 'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        invitation = ProjectInvitation.objects.select_related('project').get(id=invitation_id)
+    except (ValidationError, ProjectInvitation.DoesNotExist):
+        return JsonResponse({'error': 'invitation_not_found'}, status=404)
+    if invitation.status == ProjectInvitation.Status.ACCEPTED:
+        return JsonResponse({'error': 'invitation_already_accepted'}, status=400)
+    raw_token = uuid.uuid4().hex
+    invitation.token = _hash_invitation_token(raw_token)
+    invitation.token_attempts = 0
+    invitation.max_token_attempts = _invite_max_attempts()
+    invitation.status = ProjectInvitation.Status.PENDING
+    invitation.revoked_at = None
+    invitation.accepted_at = None
+    invitation.accepted_by = ''
+    invitation.resent_at = timezone.now()
+    invitation.expires_at = timezone.now() + timedelta(minutes=_invite_ttl_minutes())
+    invitation.save(
+        update_fields=[
+            'token',
+            'token_attempts',
+            'max_token_attempts',
+            'status',
+            'revoked_at',
+            'accepted_at',
+            'accepted_by',
+            'resent_at',
+            'expires_at',
+            'updated_at',
+        ]
+    )
+    app_base_url = os.environ.get('EDMP_APP_BASE_URL', 'http://localhost:8000').rstrip('/')
+    invite_link = f'{app_base_url}/invite-login?token={raw_token}'
+    UserNotification.objects.create(
+        user_email=invitation.email,
+        notification_type='project_membership_invite_link_resend',
+        channel=UserNotification.Channel.EMAIL,
+        provider='default',
+        payload={
+            'project_id': str(invitation.project_id),
+            'project_name': invitation.project.name,
+            'role': invitation.role,
+            'invite_link': invite_link,
+            'expires_at': invitation.expires_at.isoformat(),
+        },
+    )
+    tenant_schema = _tenant_schema(request)
+    correlation_id = getattr(request, 'correlation_id', None) or request.headers.get('X-Correlation-Id')
+    actor_id = request.headers.get('X-User-Id')
+    event_data = {
+        'invite_link': invite_link,
+        'invitation': _project_invitation_to_dict(invitation),
+    }
+    maybe_publish_event(
+        event_type='project.invitation.resent',
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.project.invitation.resent',
+        correlation_id=correlation_id,
+        user_id=actor_id,
+        data=event_data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action='project.invitation.resent',
+        resource_type='project',
+        resource_id=str(invitation.project_id),
+        correlation_id=correlation_id,
+        user_id=actor_id,
+        data=event_data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(
+        {
+            'invite_link': invite_link,
             'invitation': _project_invitation_to_dict(invitation),
         }
     )

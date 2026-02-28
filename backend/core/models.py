@@ -61,6 +61,8 @@ class ProjectInvitation(models.Model):
     email = models.EmailField(max_length=320)
     role = models.CharField(max_length=64, choices=ProjectMembership.Role.choices)
     token = models.CharField(max_length=64, unique=True)
+    token_attempts = models.PositiveIntegerField(default=0)
+    max_token_attempts = models.PositiveIntegerField(default=5)
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
     )
@@ -68,6 +70,8 @@ class ProjectInvitation(models.Model):
     accepted_by = models.CharField(max_length=200, blank=True, default="")
     expires_at = models.DateTimeField()
     accepted_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    resent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

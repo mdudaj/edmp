@@ -241,10 +241,15 @@ def test_project_member_invite_new_user_generates_one_time_link_and_acceptance()
     assert invite.json()["delivery"] == "one_time_login_link"
     assert "invite-login?token=" in invite.json()["invite_link"]
     assert invite.json()["invitation"]["id"]
+    raw_token = invite.json()["invite_link"].split("token=")[-1]
+    invitation_id = invite.json()["invitation"]["id"]
+    stored_invitation = ProjectInvitation.objects.get(id=invitation_id)
+    assert stored_invitation.token != raw_token
+    assert len(stored_invitation.token) == 64
 
     accept = client.post(
         "/api/v1/projects/invitations/accept",
-        data=json.dumps({"token": invite.json()["invite_link"].split("token=")[-1]}),
+        data=json.dumps({"token": raw_token}),
         content_type="application/json",
         HTTP_HOST=host,
         HTTP_X_USER_ID="new-user@example.com",
@@ -260,6 +265,73 @@ def test_project_member_invite_new_user_generates_one_time_link_and_acceptance()
         ).count()
         == 1
     )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_project_invitation_revoke_and_resend_rotation():
+    host, _ = _create_tenants()
+    client = Client()
+    project = client.post(
+        "/api/v1/projects",
+        data=json.dumps({"name": "Security Study"}),
+        content_type="application/json",
+        HTTP_HOST=host,
+    )
+    invite = client.post(
+        f"/api/v1/projects/{project.json()['id']}/members/invite",
+        data=json.dumps({"email": "rotated@example.com", "role": "researcher"}),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ID="owner@example.com",
+    )
+    invitation_id = invite.json()["invitation"]["id"]
+    first_token = invite.json()["invite_link"].split("token=")[-1]
+
+    revoked = client.post(
+        f"/api/v1/projects/invitations/{invitation_id}/revoke",
+        data=json.dumps({}),
+        content_type="application/json",
+        HTTP_HOST=host,
+    )
+    assert revoked.status_code == 200
+    assert revoked.json()["invitation"]["status"] == "revoked"
+    denied_accept = client.post(
+        "/api/v1/projects/invitations/accept",
+        data=json.dumps({"token": first_token}),
+        content_type="application/json",
+        HTTP_HOST=host,
+    )
+    assert denied_accept.status_code == 400
+    assert denied_accept.json()["error"] == "invitation_revoked"
+
+    resent = client.post(
+        f"/api/v1/projects/invitations/{invitation_id}/resend",
+        data=json.dumps({}),
+        content_type="application/json",
+        HTTP_HOST=host,
+    )
+    assert resent.status_code == 200
+    second_token = resent.json()["invite_link"].split("token=")[-1]
+    assert second_token != first_token
+    assert resent.json()["invitation"]["status"] == "pending"
+
+    old_token_rejected = client.post(
+        "/api/v1/projects/invitations/accept",
+        data=json.dumps({"token": first_token}),
+        content_type="application/json",
+        HTTP_HOST=host,
+    )
+    assert old_token_rejected.status_code == 404
+
+    accepted = client.post(
+        "/api/v1/projects/invitations/accept",
+        data=json.dumps({"token": second_token}),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ID="rotated@example.com",
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["invitation"]["status"] == "accepted"
 
 
 @pytest.mark.django_db(transaction=True)

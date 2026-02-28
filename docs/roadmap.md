@@ -53,12 +53,12 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 47. **Retention lifecycle**: added tenant-scoped retention rule/hold/run APIs with release flow and archive/delete execution conventions (see `docs/retention.md`).
 48. **Identity lifecycle expansion**: added tenant-scoped user directory/profile state APIs plus project membership lifecycle endpoints (role changes, revoke/reactivate) with role-history tracking (see `docs/identity-lifecycle.md`).
 49. **Notification delivery hardening**: added notification provider/retry/dead-letter model fields with queue dispatch/retry APIs and delivery status visibility (see `docs/notification-delivery.md`).
+50. **Invitation security hardening**: added invite revoke/resend APIs, hashed token storage at rest, and strict TTL/attempt enforcement for one-time login links (see `docs/invitation-security.md` and `docs/project-membership.md`).
 
 ## Near-term (next)
 
-1. **Invitation security hardening**: add explicit invite revoke/resend endpoints, token hashing-at-rest, and strict TTL/attempt policies.
-2. **Scalability follow-through**: add DB indexes and load-profile checks for high-volume operational endpoints.
-3. **CI/test throughput optimization**: reduce local/CI feedback time with focused suites and shard improvements.
+1. **Scalability follow-through**: add DB indexes and load-profile checks for high-volume operational endpoints.
+2. **CI/test throughput optimization**: reduce local/CI feedback time with focused suites and shard improvements.
 
 ## Mid-term
 

@@ -31,6 +31,7 @@ This repository contains an initial scaffold for a Kubernetes-native, multi-tena
 * [Connector execution model](docs/connectors.md)
 * [Workflow orchestration](docs/orchestration.md)
 * [Project membership and invitations](docs/project-membership.md)
+* [Invitation security hardening](docs/invitation-security.md)
 * [Lineage](docs/lineage.md)
 * [Search](docs/search.md)
 * [Data quality](docs/data-quality.md)
