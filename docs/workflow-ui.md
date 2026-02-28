@@ -136,3 +136,21 @@ UI-facing test scenarios:
    * queue/start/cancel orchestration run
    * inspect and cancel/timeout-manage agent run
 4. Documentation is sufficient to implement screens without additional scope discovery.
+
+## Operational UI API support (implemented scaffold increment)
+
+To enable UI implementation with a stable backend contract, EDMP now provides UI-focused operational endpoints:
+
+* `GET /api/v1/ui/operations/dashboard`
+  * returns summary cards for stewardship/workflow/orchestration/agent statuses
+  * supports optional `project_id` filtering for project-scoped domains
+* `GET /api/v1/ui/operations/stewardship-workbench`
+  * returns stewardship queue items with computed `allowed_actions` per item
+* `GET /api/v1/ui/operations/orchestration-monitor`
+  * returns orchestration workflows/runs + capability flags
+  * supports optional `project_id` filtering
+* `GET /api/v1/ui/operations/agent-monitor`
+  * returns agent run history + capability flags
+  * supports optional `project_id` filtering
+
+This keeps UI rendering concerns decoupled from domain mutation APIs while preserving server-side role enforcement.

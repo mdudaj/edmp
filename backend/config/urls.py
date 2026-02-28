@@ -112,6 +112,10 @@ from core.views import (
     workflow_run_tasks,
     workflow_run_transition,
     workflow_runs,
+    ui_operations_agent_monitor,
+    ui_operations_dashboard,
+    ui_operations_orchestration_monitor,
+    ui_operations_stewardship_workbench,
 )
 from tenants.views import tenants
 
@@ -322,6 +326,22 @@ urlpatterns = [
     path('api/v1/ingestions', ingestions, name='ingestions'),
     path('api/v1/ingestions/<uuid:ingestion_id>', ingestion_detail, name='ingestion_detail'),
     path('api/v1/search/assets', search_assets, name='search_assets'),
+    path('api/v1/ui/operations/dashboard', ui_operations_dashboard, name='ui_operations_dashboard'),
+    path(
+        'api/v1/ui/operations/stewardship-workbench',
+        ui_operations_stewardship_workbench,
+        name='ui_operations_stewardship_workbench',
+    ),
+    path(
+        'api/v1/ui/operations/orchestration-monitor',
+        ui_operations_orchestration_monitor,
+        name='ui_operations_orchestration_monitor',
+    ),
+    path(
+        'api/v1/ui/operations/agent-monitor',
+        ui_operations_agent_monitor,
+        name='ui_operations_agent_monitor',
+    ),
     path('api/v1/lineage/edges', lineage_edges, name='lineage_edges'),
     path('admin/', admin.site.urls),
 ]

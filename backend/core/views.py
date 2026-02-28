@@ -195,6 +195,11 @@ def _parse_orchestration_steps(value: Any) -> list[dict[str, Any]] | None:
     return normalized
 
 
+def _request_roles(request) -> set[str]:
+    raw = request.headers.get('X-User-Roles', '')
+    return {role.strip() for role in raw.split(',') if role.strip()}
+
+
 CLASSIFICATION_SENSITIVITY = {
     Classification.Level.PUBLIC: 0,
     Classification.Level.INTERNAL: 1,
@@ -5273,6 +5278,189 @@ def orchestration_run_transition(request, run_id: str):
         rabbitmq_url=os.environ.get('RABBITMQ_URL'),
     )
     return JsonResponse(payload_data)
+
+
+@csrf_exempt
+def ui_operations_dashboard(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    project_id = request.GET.get('project_id')
+    roles = _request_roles(request)
+    stewardship_qs = StewardshipItem.objects.all()
+    workflow_qs = WorkflowRun.objects.all()
+    orchestration_qs = OrchestrationRun.objects.all()
+    agent_qs = AgentRun.objects.all()
+    if project_id:
+        orchestration_qs = orchestration_qs.filter(project_id=project_id)
+        agent_qs = agent_qs.filter(
+            prompt__icontains=f'project:{project_id}'
+        )
+    stewardship_counts = {
+        status: stewardship_qs.filter(status=status).count()
+        for status in StewardshipItem.Status.values
+    }
+    workflow_counts = {
+        status: workflow_qs.filter(status=status).count()
+        for status in WorkflowRun.Status.values
+    }
+    orchestration_counts = {
+        status: orchestration_qs.filter(status=status).count()
+        for status in OrchestrationRun.Status.values
+    }
+    agent_counts = {
+        status: agent_qs.filter(status=status).count()
+        for status in AgentRun.Status.values
+    }
+    return JsonResponse(
+        {
+            'project_id': project_id,
+            'cards': {
+                'stewardship': stewardship_counts,
+                'workflow': workflow_counts,
+                'orchestration': orchestration_counts,
+                'agent': agent_counts,
+            },
+            'capabilities': {
+                'can_view': bool(
+                    roles
+                    & {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'}
+                ),
+                'can_manage_stewardship': bool(roles & {'policy.admin', 'tenant.admin'}),
+                'can_queue_orchestration_runs': bool(
+                    roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
+                ),
+                'can_manage_orchestration': bool(roles & {'policy.admin', 'tenant.admin'}),
+                'can_manage_agents': bool(
+                    roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
+                ),
+            },
+        }
+    )
+
+
+@csrf_exempt
+def ui_operations_stewardship_workbench(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    roles = _request_roles(request)
+    can_manage = bool(roles & {'policy.admin', 'tenant.admin'})
+    qs = StewardshipItem.objects.order_by('-created_at')
+    status_filter = request.GET.get('status')
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    severity_filter = request.GET.get('severity')
+    if severity_filter:
+        qs = qs.filter(severity=severity_filter)
+    items = []
+    for item in qs[:200]:
+        item_data = _stewardship_item_to_dict(item)
+        allowed_actions = []
+        if can_manage:
+            allowed_actions.append('assign')
+            if item.status in {
+                StewardshipItem.Status.OPEN,
+                StewardshipItem.Status.BLOCKED,
+            }:
+                allowed_actions.append('start_review')
+            if item.status in {
+                StewardshipItem.Status.OPEN,
+                StewardshipItem.Status.IN_REVIEW,
+            }:
+                allowed_actions.append('block')
+            if item.status in {
+                StewardshipItem.Status.OPEN,
+                StewardshipItem.Status.IN_REVIEW,
+                StewardshipItem.Status.BLOCKED,
+            }:
+                allowed_actions.extend(['resolve', 'dismiss'])
+            if item.status in {
+                StewardshipItem.Status.RESOLVED,
+                StewardshipItem.Status.DISMISSED,
+            }:
+                allowed_actions.append('reopen')
+        item_data['allowed_actions'] = sorted(set(allowed_actions))
+        items.append(item_data)
+    return JsonResponse(
+        {'items': items, 'capabilities': {'can_manage_stewardship': can_manage}}
+    )
+
+
+@csrf_exempt
+def ui_operations_orchestration_monitor(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    roles = _request_roles(request)
+    project_id = request.GET.get('project_id')
+    workflows_qs = OrchestrationWorkflow.objects.order_by('-created_at')
+    runs_qs = OrchestrationRun.objects.order_by('-created_at')
+    if project_id:
+        workflows_qs = workflows_qs.filter(project_id=project_id)
+        runs_qs = runs_qs.filter(project_id=project_id)
+    return JsonResponse(
+        {
+            'project_id': project_id,
+            'workflows': [_orchestration_workflow_to_dict(item) for item in workflows_qs[:100]],
+            'runs': [_orchestration_run_to_dict(item) for item in runs_qs[:100]],
+            'capabilities': {
+                'can_queue_runs': bool(
+                    roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
+                ),
+                'can_cancel_runs': bool(roles & {'policy.admin', 'tenant.admin'}),
+            },
+        }
+    )
+
+
+@csrf_exempt
+def ui_operations_agent_monitor(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    roles = _request_roles(request)
+    project_id = request.GET.get('project_id')
+    qs = AgentRun.objects.order_by('-created_at')
+    if project_id:
+        qs = qs.filter(prompt__icontains=f'project:{project_id}')
+    return JsonResponse(
+        {
+            'project_id': project_id,
+            'runs': [_agent_run_to_dict(item) for item in qs[:100]],
+            'capabilities': {
+                'can_create_runs': bool(
+                    roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
+                ),
+                'can_cancel_runs': bool(
+                    roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
+                ),
+                'can_materialize_timeouts': bool(
+                    roles & {'policy.admin', 'tenant.admin'}
+                ),
+            },
+        }
+    )
 
 
 @csrf_exempt
