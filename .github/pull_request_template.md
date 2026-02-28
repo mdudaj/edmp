@@ -2,6 +2,16 @@
 
 Describe what this PR changes and why.
 
+## Issue contract
+
+- [ ] Linked execution issue includes Objective, Deliverables, Acceptance Criteria, Dependencies, and References.
+- [ ] Scope boundary for this PR is explicit and matches the issue deliverables.
+
+## Handoff contract
+
+- [ ] Changed files and risk notes are captured in PR description.
+- [ ] Done/blocker state is explicit (no implicit “follow-up later” gaps).
+
 ## Documentation chunk
 
 - [ ] This docs PR is a meaningful batch (target: 3+ docs files when docs-only).

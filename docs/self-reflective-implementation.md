@@ -64,6 +64,8 @@ Each execution issue must include:
 * Dependencies (`depends on` / `blocks`)
 * References to roadmap/design docs
 
+Template: use `.github/ISSUE_TEMPLATE/delivery-work-item.md` for consistent issue setup.
+
 ## Resources to expose (to reduce looping)
 
 * Repository symbol/code index and architecture map.
@@ -99,6 +101,8 @@ Every lane must pass the same merge gate before integration:
 2. Backend tests (`pytest -q`)
 3. Reviewer sign-off for correctness/security risks
 4. Issue checklist updated with completed deliverables and acceptance criteria
+
+PR checklist template: `.github/pull_request_template.md` enforces issue + handoff contract items.
 
 ## End-to-end execution policy (mandatory)
 
