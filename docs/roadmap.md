@@ -39,6 +39,7 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 33. **OIDC/JWT hardening**: added bearer token validation, issuer/audience checks, claim mapping to user/roles context, tenant-claim guardrails, and invalid-token failure tests (see `docs/identity.md` and `docs/policy.md`).
 34. **Operational runbooks and incident playbooks**: documented first-response runbooks for connector failures, orchestration failures, and queue backlog incidents with verification commands and safety notes (see `docs/operations-runbooks.md`).
 35. **OIDC rollout and key rotation operations**: documented phased `EDMP_OIDC_REQUIRED` rollout, JWT secret rotation sequence, smoke checks, and rollback guidance for operators (see `docs/operations-runbooks.md` and `docs/identity.md`).
+36. **Pagination and list endpoint performance hardening**: added bounded default pagination and page-size caps for high-volume list APIs with pagination regression and baseline latency checks (see `docs/performance-baseline.md`).
 
 ## Near-term (next)
 

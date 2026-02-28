@@ -136,6 +136,54 @@ def _parse_json_body(request):
         return None
 
 
+def _parse_pagination(request, *, default_page_size: int = 50, max_page_size: int = 100):
+    page_param = request.GET.get('page')
+    page_size_param = request.GET.get('page_size')
+    limit_param = request.GET.get('limit')
+    offset_param = request.GET.get('offset')
+
+    try:
+        if limit_param is not None or offset_param is not None:
+            limit = int(limit_param or default_page_size)
+            offset = int(offset_param or 0)
+            if limit < 1 or offset < 0:
+                return None, JsonResponse({'error': 'limit must be >= 1 and offset must be >= 0'}, status=400)
+            page_size = min(limit, max_page_size)
+            page = (offset // page_size) + 1
+            return {'page': page, 'page_size': page_size, 'offset': offset}, None
+
+        page = int(page_param or 1)
+        page_size = int(page_size_param or default_page_size)
+    except ValueError:
+        return None, JsonResponse({'error': 'page/page_size/limit/offset must be integers'}, status=400)
+
+    if page < 1 or page_size < 1:
+        return None, JsonResponse({'error': 'page and page_size must be >= 1'}, status=400)
+    page_size = min(page_size, max_page_size)
+    offset = (page - 1) * page_size
+    return {'page': page, 'page_size': page_size, 'offset': offset}, None
+
+
+def _paginated_response(request, qs, serializer, *, default_page_size: int = 50, max_page_size: int = 100):
+    pagination, error = _parse_pagination(
+        request, default_page_size=default_page_size, max_page_size=max_page_size
+    )
+    if error:
+        return error
+    total = qs.count()
+    offset = pagination['offset']
+    page_size = pagination['page_size']
+    items = [serializer(item) for item in qs[offset : offset + page_size]]
+    return JsonResponse(
+        {
+            'items': items,
+            'page': pagination['page'],
+            'page_size': page_size,
+            'total': total,
+        }
+    )
+
+
 def _parse_string_list(value: Any) -> list[str] | None:
     if value is None:
         return []
@@ -4944,7 +4992,7 @@ def projects(request):
         status_filter = request.GET.get('status')
         if status_filter:
             qs = qs.filter(status=status_filter)
-        return JsonResponse({'items': [_project_to_dict(item) for item in qs]})
+        return _paginated_response(request, qs, _project_to_dict)
 
     if request.method == 'POST':
         forbidden = require_any_role(request, {'catalog.editor', 'policy.admin', 'tenant.admin'})
@@ -4989,9 +5037,7 @@ def orchestration_workflows(request):
         trigger_type = request.GET.get('trigger_type')
         if trigger_type:
             qs = qs.filter(trigger_type=trigger_type)
-        return JsonResponse(
-            {'items': [_orchestration_workflow_to_dict(item) for item in qs]}
-        )
+        return _paginated_response(request, qs, _orchestration_workflow_to_dict)
 
     if request.method == 'POST':
         forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
@@ -5081,7 +5127,7 @@ def orchestration_runs(request):
         status_filter = request.GET.get('status')
         if status_filter:
             qs = qs.filter(status=status_filter)
-        return JsonResponse({'items': [_orchestration_run_to_dict(item) for item in qs]})
+        return _paginated_response(request, qs, _orchestration_run_to_dict)
 
     if request.method == 'POST':
         forbidden = require_any_role(request, {'catalog.editor', 'policy.admin', 'tenant.admin'})
@@ -5482,7 +5528,7 @@ def connector_runs(request):
         status_filter = request.GET.get('status')
         if status_filter:
             qs = qs.filter(status=status_filter)
-        return JsonResponse({'items': [_connector_run_to_dict(item) for item in qs]})
+        return _paginated_response(request, qs, _connector_run_to_dict)
 
     if request.method == 'POST':
         forbidden = require_any_role(request, {'catalog.editor', 'tenant.admin'})
@@ -5616,7 +5662,7 @@ def ingestions(request):
         project_id = request.GET.get('project_id')
         if project_id:
             qs = qs.filter(project_id=project_id)
-        return JsonResponse({'items': [_ingestion_to_dict(item) for item in qs]})
+        return _paginated_response(request, qs, _ingestion_to_dict)
 
     if request.method == 'POST':
         forbidden = require_role(request, 'catalog.editor')
@@ -5701,23 +5747,15 @@ def ingestion_detail(request, ingestion_id: str):
 def assets(request):
     """List/create tenant-scoped DataAssets.
 
-    GET supports simple offset pagination via ?limit= (default 100, max 500) and ?offset= (default 0).
+    GET supports page/page_size pagination (default page_size 50, max 100).
+    Legacy limit/offset params are also accepted.
     """
     if request.method == 'GET':
         forbidden = require_any_role(request, {'catalog.reader', 'catalog.editor', 'tenant.admin'})
         if forbidden:
             return forbidden
-        try:
-            limit = int(request.GET.get('limit', '100'))
-            offset = int(request.GET.get('offset', '0'))
-        except ValueError:
-            return JsonResponse({'error': 'limit/offset must be integers'}, status=400)
-        limit = min(max(limit, 1), 500)
-        offset = max(offset, 0)
-
-        qs = DataAsset.objects.order_by('created_at')[offset : offset + limit]
-        items = [_asset_to_dict(a) for a in qs]
-        return JsonResponse({'items': items})
+        qs = DataAsset.objects.order_by('created_at')
+        return _paginated_response(request, qs, _asset_to_dict)
 
     if request.method == 'POST':
         forbidden = require_role(request, 'catalog.editor')

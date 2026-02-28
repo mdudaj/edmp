@@ -44,6 +44,7 @@ def test_api_latency_baseline_profiles():
 
     health_latencies: list[float] = []
     list_latencies: list[float] = []
+    paginated_list_latencies: list[float] = []
     error_count = 0
 
     for _ in range(40):
@@ -60,9 +61,17 @@ def test_api_latency_baseline_profiles():
         if response.status_code >= 500:
             error_count += 1
 
+    for _ in range(40):
+        start = time.perf_counter()
+        response = client.get('/api/v1/assets?page=1&page_size=20', HTTP_HOST=host)
+        paginated_list_latencies.append(time.perf_counter() - start)
+        if response.status_code >= 500:
+            error_count += 1
+
     assert error_count == 0
     assert _p95(health_latencies) < 0.100
     assert _p95(list_latencies) < 0.300
+    assert _p95(paginated_list_latencies) < 0.250
 
 
 @pytest.mark.django_db(transaction=True)

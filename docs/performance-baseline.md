@@ -12,7 +12,10 @@ The baseline uses deterministic local/CI profiles in `backend/tests/test_perform
 2. **API catalog profile**
    * Seed 20 assets, then run 40x `GET /api/v1/assets`.
    * Measures list latency and 5xx rate.
-3. **Worker ping profile**
+3. **API paginated catalog profile**
+   * Run 40x `GET /api/v1/assets?page=1&page_size=20`.
+   * Measures bounded-response latency and verifies pagination path performance.
+4. **Worker ping profile**
    * 30x `core.tasks.ping` task executions via `TenantTask`.
    * Measures task execution latency and verifies task metrics emission.
 
@@ -20,6 +23,7 @@ The baseline uses deterministic local/CI profiles in `backend/tests/test_perform
 
 * Health endpoint p95 latency `< 100ms`.
 * Asset list endpoint p95 latency `< 300ms`.
+* Paginated asset list endpoint p95 latency `< 250ms`.
 * Worker ping task p95 latency `< 200ms`.
 * Error budget for the profiles: `0` responses with status `>=500`.
 
@@ -37,6 +41,18 @@ POSTGRES_DB=edmp_test POSTGRES_USER=edmp POSTGRES_PASSWORD=edmp POSTGRES_HOST=lo
 ## Bottleneck hypothesis and next optimization path
 
 Primary near-term bottleneck risk is ORM-heavy list endpoints under larger datasets (N+1/serialization overhead) rather than middleware/probe paths.
+
+## Query/index review notes
+
+High-frequency list filters observed in current APIs:
+
+* `ingestions`: `project_id`
+* `connector_runs`: `status`, `ingestion_id`, `ingestion__project_id`
+* `orchestration_runs`: `project_id`, `workflow_id`, `status`
+* `projects`: `status`
+
+Current hardening in this wave focuses on bounded page sizes and predictable list cost.  
+Next DB optimization increment should validate/select indexes against production query plans for the filters above.
 
 Next optimization path for Wave 3:
 
