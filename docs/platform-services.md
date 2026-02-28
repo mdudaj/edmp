@@ -58,3 +58,7 @@ helm upgrade --install edmp-platform deploy/helm/edmp-platform -n edmp --create-
 
 * Full production runbooks for each dependency.
 * Cloud-vendor-specific managed service templates.
+
+## Operational response
+
+For operator first-response procedures and incident checkpoints, see [operations runbooks](operations-runbooks.md).

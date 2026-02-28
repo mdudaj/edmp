@@ -24,6 +24,7 @@ When needed, expose `/metrics` (Prometheus) with at least:
 * DB connection pool saturation / error rate
 
 Current baseline checks for latency/error regression are documented in [performance baseline](performance-baseline.md).
+Operational first-response and recovery steps are documented in [operations runbooks](operations-runbooks.md).
 
 ## Tracing (future)
 

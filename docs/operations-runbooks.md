@@ -1,0 +1,122 @@
+# Operational runbooks and incident playbooks
+
+This guide provides first-response procedures for common EDMP operational incidents.
+
+## Scope
+
+Runbooks in this document cover:
+
+* connector execution failures
+* orchestration run failures
+* queue backlog and worker lag
+
+## Incident triage playbook (all incidents)
+
+1. Confirm blast radius
+   * Which tenant(s), endpoint(s), or workflow(s) are affected.
+   * Whether writes are failing, reads are degraded, or both.
+2. Check platform health
+   * `GET /livez`, `GET /readyz`, and `GET /metrics`
+   * Postgres/RabbitMQ pod health and restart state.
+3. Capture evidence before mutation
+   * correlation id(s), run ids, timestamps, and current status responses.
+4. Stabilize
+   * Stop new triggering actions (pause schedule/manual run creation if needed).
+   * Prefer cancelling queued/running runs over deleting records.
+5. Recover
+   * Follow specific runbook below.
+6. Verify and close
+   * Re-run health checks, verify successful end-to-end run, and log remediation steps.
+
+## Runbook: connector failures
+
+### Detection signals
+
+* `connector.run.failed` / `connector.run.cancelled` events.
+* ingestion status transitions to `failed`.
+* `/metrics` task failure counters increase.
+
+### Verification commands
+
+```bash
+curl -sS http://localhost:8000/api/v1/connectors/runs?status=failed -H "Host: <tenant-host>"
+curl -sS http://localhost:8000/api/v1/ingestions/<ingestion_id> -H "Host: <tenant-host>"
+curl -sS http://localhost:8000/metrics | grep -E "edmp_celery_task_executions|edmp_celery_task_duration"
+```
+
+### Recovery steps
+
+1. Identify failed `connector_run_id` and `ingestion_id`.
+2. Confirm failure reason (`error_message`, classification/policy constraints, source payload issues).
+3. Correct upstream payload/config issue.
+4. Re-queue ingestion through normal API path; avoid direct DB edits.
+5. Verify final run status is `succeeded`.
+
+### Safety / rollback notes
+
+* Do not delete failed runs during incident response; keep them for audit/evidence.
+* If repeated failures occur, pause automation and require manual approval before retries.
+
+## Runbook: orchestration failures
+
+### Detection signals
+
+* `orchestration.run.failed` events.
+* orchestration monitor shows high failed run count.
+
+### Verification commands
+
+```bash
+curl -sS http://localhost:8000/api/v1/orchestration/runs?status=failed -H "Host: <tenant-host>"
+curl -sS http://localhost:8000/api/v1/orchestration/runs/<run_id>/transition -X POST \
+  -H "Host: <tenant-host>" -H "Content-Type: application/json" -d '{"action":"cancel"}'
+```
+
+### Recovery steps
+
+1. Inspect `step_results` and `error_message` to isolate failed step.
+2. Validate referenced ingestion exists and belongs to expected project.
+3. If run is still active and non-recoverable, cancel it.
+4. Fix workflow definition / ingestion dependency.
+5. Queue a fresh run and verify all steps complete successfully.
+
+### Safety / rollback notes
+
+* Prefer cancel + rerun over force-updating run status.
+* Keep failed run history intact for post-incident analysis.
+
+## Runbook: queue backlog and worker lag
+
+### Detection signals
+
+* Rapid growth of `queued` connector/orchestration runs.
+* Increased task duration and delayed completion.
+* Worker pods healthy but throughput reduced.
+
+### Verification commands
+
+```bash
+curl -sS http://localhost:8000/api/v1/connectors/runs?status=queued -H "Host: <tenant-host>"
+curl -sS http://localhost:8000/api/v1/orchestration/runs?status=queued -H "Host: <tenant-host>"
+curl -sS http://localhost:8000/metrics | grep -E "edmp_celery_task_executions|edmp_celery_task_duration"
+kubectl get pods -n edmp
+kubectl logs deployment/edmp-platform-worker -n edmp --tail=200
+```
+
+### Recovery steps
+
+1. Confirm dependency health (Postgres, RabbitMQ, network).
+2. Scale worker deployment if backlog is capacity-driven.
+3. Temporarily reduce new run creation rate (manual gate).
+4. Drain backlog and track queue depth trend to steady state.
+
+### Safety / rollback notes
+
+* Scale gradually; avoid sudden spikes that overload DB or broker.
+* If scaling worsens error rate, revert to prior replica count and investigate bottleneck.
+
+## Post-incident checklist
+
+* Document timeline, affected tenants, root cause, and mitigation.
+* Capture follow-up actions in backlog (config hardening, alert tuning, retry policy).
+* Add/adjust automated checks to detect recurrence earlier.
