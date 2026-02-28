@@ -261,6 +261,31 @@ class PrivacyAction(models.Model):
     executed_at = models.DateTimeField(null=True, blank=True)
 
 
+class AgentRun(models.Model):
+    class Status(models.TextChoices):
+        QUEUED = "queued"
+        RUNNING = "running"
+        COMPLETED = "completed"
+        FAILED = "failed"
+        CANCELLED = "cancelled"
+        TIMED_OUT = "timed_out"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor_id = models.CharField(max_length=200, blank=True, default="")
+    prompt = models.TextField(blank=True, default="")
+    allowed_tools = models.JSONField(default=list, blank=True)
+    timeout_seconds = models.IntegerField(default=60)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.QUEUED
+    )
+    output = models.JSONField(default=dict, blank=True)
+    error_message = models.CharField(max_length=512, blank=True, default="")
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class ResidencyProfile(models.Model):
     class EnforcementMode(models.TextChoices):
         ADVISORY = "advisory"

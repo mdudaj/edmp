@@ -24,6 +24,23 @@ This note defines controls for tenant-safe agentic AI workflows in EDMP.
 4. Start/completion/failure events are emitted.
 5. Audit record stores inputs, outputs, tool invocations, and outcome metadata.
 
+## Implemented scaffold slice
+
+* API surface:
+  * `POST/GET /api/v1/agent/runs`
+  * `POST /api/v1/agent/runs/{run_id}/transition`
+* Tenant-scoped run lifecycle statuses: `queued`, `running`, `completed`, `failed`, `cancelled`, `timed_out`.
+* Enforced tool allowlist (`catalog.search`, `asset.read`, `contract.read`, `quality.read`, `lineage.read`, `governance.read`).
+* Bounded runtime controls:
+  * Required timeout range enforcement (`5..3600` seconds)
+  * Explicit timeout materialization transition (`action=materialize_timeouts`)
+  * Explicit cancellation transition (`action=cancel`)
+* Event and audit conventions for create/transition mutations using `agent.run.*` event names.
+
+## Implementation quality requirement
+
+All Python code for this slice adheres to the repository PEP 8 requirement documented in `README.md` and `docs/self-reflective-implementation.md`.
+
 ## Required event fields
 
 * `tenant_id`

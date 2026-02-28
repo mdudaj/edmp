@@ -2,6 +2,7 @@ import json
 import os
 import re
 import uuid
+from datetime import timedelta
 from typing import Any
 
 from django.core.exceptions import ValidationError
@@ -28,6 +29,7 @@ from .models import (
     DataContract,
     DataShare,
     DataProduct,
+    AgentRun,
     GlossaryTerm,
     GovernancePolicy,
     GovernancePolicyTransition,
@@ -156,6 +158,15 @@ CLASSIFICATION_SENSITIVITY = {
     Classification.Level.INTERNAL: 1,
     Classification.Level.CONFIDENTIAL: 2,
     Classification.Level.RESTRICTED: 3,
+}
+
+AGENT_TOOL_ALLOWLIST = {
+    'catalog.search',
+    'asset.read',
+    'contract.read',
+    'quality.read',
+    'lineage.read',
+    'governance.read',
 }
 
 
@@ -316,6 +327,23 @@ def _privacy_action_to_dict(action: PrivacyAction) -> dict[str, Any]:
         'requested_at': action.requested_at.isoformat(),
         'decided_at': action.decided_at.isoformat() if action.decided_at else None,
         'executed_at': action.executed_at.isoformat() if action.executed_at else None,
+    }
+
+
+def _agent_run_to_dict(agent_run: AgentRun) -> dict[str, Any]:
+    return {
+        'id': str(agent_run.id),
+        'actor_id': agent_run.actor_id or None,
+        'prompt': agent_run.prompt,
+        'allowed_tools': agent_run.allowed_tools,
+        'timeout_seconds': agent_run.timeout_seconds,
+        'status': agent_run.status,
+        'output': agent_run.output,
+        'error_message': agent_run.error_message or None,
+        'started_at': agent_run.started_at.isoformat() if agent_run.started_at else None,
+        'finished_at': agent_run.finished_at.isoformat() if agent_run.finished_at else None,
+        'created_at': agent_run.created_at.isoformat(),
+        'updated_at': agent_run.updated_at.isoformat(),
     }
 
 
@@ -1225,6 +1253,184 @@ def privacy_action_execute(request, action_id: str):
         action='privacy.action.executed',
         resource_type='privacy_action',
         resource_id=str(action.id),
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=payload_data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    return JsonResponse(payload_data)
+
+
+@csrf_exempt
+def agent_runs(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(
+            request, {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'}
+        )
+        if forbidden:
+            return forbidden
+        qs = AgentRun.objects.order_by('-created_at')
+        status_filter = request.GET.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return JsonResponse({'items': [_agent_run_to_dict(item) for item in qs]})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(request, {'catalog.editor', 'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        prompt = (payload.get('prompt') or '').strip()
+        if not prompt:
+            return JsonResponse({'error': 'prompt is required'}, status=400)
+        allowed_tools = payload.get('allowed_tools', [])
+        if not isinstance(allowed_tools, list) or not all(
+            isinstance(item, str) and item for item in allowed_tools
+        ):
+            return JsonResponse({'error': 'allowed_tools must be a list of strings'}, status=400)
+        invalid_tools = sorted(set(allowed_tools) - AGENT_TOOL_ALLOWLIST)
+        if invalid_tools:
+            return JsonResponse({'error': 'invalid_allowed_tools', 'details': invalid_tools}, status=400)
+        timeout_seconds = payload.get('timeout_seconds', 60)
+        try:
+            timeout_seconds = int(timeout_seconds)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'timeout_seconds must be an integer'}, status=400)
+        if timeout_seconds < 5 or timeout_seconds > 3600:
+            return JsonResponse({'error': 'timeout_seconds out of range'}, status=400)
+        now = timezone.now()
+        status = AgentRun.Status.QUEUED
+        started_at = None
+        finished_at = None
+        if payload.get('start_now'):
+            status = AgentRun.Status.RUNNING
+            started_at = now
+        agent_run = AgentRun.objects.create(
+            actor_id=(request.headers.get('X-User-Id') or ''),
+            prompt=prompt,
+            allowed_tools=sorted(set(allowed_tools)),
+            timeout_seconds=timeout_seconds,
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            output=payload.get('output') if isinstance(payload.get('output'), dict) else {},
+        )
+        tenant_schema = _tenant_schema(request)
+        payload_data = _agent_run_to_dict(agent_run)
+        maybe_publish_event(
+            event_type='agent.run.created',
+            tenant_id=tenant_schema,
+            routing_key=f'{tenant_schema}.agent.run.created',
+            correlation_id=getattr(request, 'correlation_id', None)
+            or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=payload_data,
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        maybe_publish_audit_event(
+            tenant_id=tenant_schema,
+            action='agent.run.created',
+            resource_type='agent_run',
+            resource_id=str(agent_run.id),
+            correlation_id=getattr(request, 'correlation_id', None)
+            or request.headers.get('X-Correlation-Id'),
+            user_id=request.headers.get('X-User-Id'),
+            data=payload_data,
+            rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+        )
+        return JsonResponse(payload_data, status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def agent_run_transition(request, run_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(request, {'catalog.editor', 'policy.admin', 'tenant.admin'})
+    if forbidden:
+        return forbidden
+    try:
+        agent_run = AgentRun.objects.get(id=run_id)
+    except (ValidationError, AgentRun.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    payload = _parse_json_body(request)
+    if payload is None:
+        return JsonResponse({'error': 'invalid_json'}, status=400)
+    action = payload.get('action')
+    now = timezone.now()
+    if action == 'start':
+        if agent_run.status != AgentRun.Status.QUEUED:
+            return JsonResponse({'error': 'invalid_status_transition'}, status=400)
+        agent_run.status = AgentRun.Status.RUNNING
+        agent_run.started_at = now
+        update_fields = ['status', 'started_at', 'updated_at']
+    elif action == 'complete':
+        if agent_run.status != AgentRun.Status.RUNNING:
+            return JsonResponse({'error': 'invalid_status_transition'}, status=400)
+        output = payload.get('output') or {}
+        if not isinstance(output, dict):
+            return JsonResponse({'error': 'output must be an object'}, status=400)
+        agent_run.status = AgentRun.Status.COMPLETED
+        agent_run.output = output
+        agent_run.error_message = ''
+        agent_run.finished_at = now
+        update_fields = ['status', 'output', 'error_message', 'finished_at', 'updated_at']
+    elif action == 'fail':
+        if agent_run.status != AgentRun.Status.RUNNING:
+            return JsonResponse({'error': 'invalid_status_transition'}, status=400)
+        error_message = (payload.get('error_message') or '').strip()
+        if not error_message:
+            return JsonResponse({'error': 'error_message is required'}, status=400)
+        agent_run.status = AgentRun.Status.FAILED
+        agent_run.error_message = error_message
+        agent_run.finished_at = now
+        update_fields = ['status', 'error_message', 'finished_at', 'updated_at']
+    elif action == 'cancel':
+        if agent_run.status not in {AgentRun.Status.QUEUED, AgentRun.Status.RUNNING}:
+            return JsonResponse({'error': 'invalid_status_transition'}, status=400)
+        agent_run.status = AgentRun.Status.CANCELLED
+        if not agent_run.started_at:
+            agent_run.started_at = now
+        agent_run.finished_at = now
+        update_fields = ['status', 'started_at', 'finished_at', 'updated_at']
+    elif action == 'materialize_timeouts':
+        forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        if agent_run.status != AgentRun.Status.RUNNING or not agent_run.started_at:
+            return JsonResponse({'error': 'invalid_status_transition'}, status=400)
+        deadline = agent_run.started_at + timedelta(seconds=agent_run.timeout_seconds)
+        if now < deadline:
+            return JsonResponse({'error': 'run_not_timed_out'}, status=400)
+        agent_run.status = AgentRun.Status.TIMED_OUT
+        agent_run.error_message = 'execution timed out'
+        agent_run.finished_at = now
+        update_fields = ['status', 'error_message', 'finished_at', 'updated_at']
+    else:
+        return JsonResponse({'error': 'invalid_action'}, status=400)
+    agent_run.save(update_fields=update_fields)
+    tenant_schema = _tenant_schema(request)
+    event_type = f'agent.run.{agent_run.status}'
+    payload_data = _agent_run_to_dict(agent_run)
+    maybe_publish_event(
+        event_type=event_type,
+        tenant_id=tenant_schema,
+        routing_key=f'{tenant_schema}.{event_type}',
+        correlation_id=getattr(request, 'correlation_id', None)
+        or request.headers.get('X-Correlation-Id'),
+        user_id=request.headers.get('X-User-Id'),
+        data=payload_data,
+        rabbitmq_url=os.environ.get('RABBITMQ_URL'),
+    )
+    maybe_publish_audit_event(
+        tenant_id=tenant_schema,
+        action=event_type,
+        resource_type='agent_run',
+        resource_id=str(agent_run.id),
         correlation_id=getattr(request, 'correlation_id', None)
         or request.headers.get('X-Correlation-Id'),
         user_id=request.headers.get('X-User-Id'),
