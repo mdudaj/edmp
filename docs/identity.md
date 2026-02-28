@@ -59,6 +59,7 @@ Fallback behavior:
 
 * When `EDMP_OIDC_REQUIRED=false`, requests without bearer tokens can still use header-based identity for local/dev.
 * When a bearer token is present but invalid, request is rejected (`401`) instead of falling back.
+* Operational rollout and key rotation procedure lives in [operations runbooks](operations-runbooks.md).
 
 ### Token claims (suggested)
 

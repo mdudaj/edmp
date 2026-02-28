@@ -9,6 +9,7 @@ Runbooks in this document cover:
 * connector execution failures
 * orchestration run failures
 * queue backlog and worker lag
+* OIDC/JWT rollout and key rotation operations
 
 ## Incident triage playbook (all incidents)
 
@@ -120,3 +121,54 @@ kubectl logs deployment/edmp-platform-worker -n edmp --tail=200
 * Document timeline, affected tenants, root cause, and mitigation.
 * Capture follow-up actions in backlog (config hardening, alert tuning, retry policy).
 * Add/adjust automated checks to detect recurrence earlier.
+
+## Runbook: OIDC rollout and key rotation operations
+
+### Prechecks
+
+1. Confirm `EDMP_OIDC_JWT_SECRET` is configured in target environment.
+2. Confirm issuer/audience values are explicitly set where required:
+   * `EDMP_OIDC_ISSUER`
+   * `EDMP_OIDC_AUDIENCE`
+3. Confirm at least one test token per tenant with expected `sub`, `roles`, and `tid`.
+4. Ensure fallback mode is currently enabled (`EDMP_OIDC_REQUIRED=false`) before strict rollout.
+
+### Phased rollout sequence
+
+1. **Stage 1 (observe)**: keep `EDMP_OIDC_REQUIRED=false`, send bearer tokens from clients/gateway, and monitor `401`/`403` patterns.
+2. **Stage 2 (enforce in non-prod)**: set `EDMP_OIDC_REQUIRED=true` in lower environments and run smoke checks.
+3. **Stage 3 (production canary)**: enable `EDMP_OIDC_REQUIRED=true` for canary environment/slice.
+4. **Stage 4 (full enforcement)**: enable globally after canary success and stable error rates.
+
+### Key rotation procedure (`EDMP_OIDC_JWT_SECRET`)
+
+1. Generate new secret and store in secret manager (do not commit in repo).
+2. Coordinate token issuer rotation so new tokens are minted with the new key.
+3. Deploy app config with new `EDMP_OIDC_JWT_SECRET`.
+4. Run smoke checks below.
+5. If failures spike, rollback to prior secret and revalidate issuer side.
+
+### Smoke checks (valid/invalid/tenant mismatch)
+
+```bash
+# valid token -> expect 200/201 on authorized endpoints
+curl -sS http://localhost:8000/api/v1/assets \
+  -H "Host: <tenant-host>" \
+  -H "Authorization: Bearer <valid-token>"
+
+# invalid signature token -> expect 401 with invalid_token_signature
+curl -sS http://localhost:8000/api/v1/assets \
+  -H "Host: <tenant-host>" \
+  -H "Authorization: Bearer <bad-signature-token>"
+
+# tenant claim mismatch token -> expect 403 with token_tenant_mismatch
+curl -sS http://localhost:8000/api/v1/assets \
+  -H "Host: <tenant-host>" \
+  -H "Authorization: Bearer <wrong-tid-token>"
+```
+
+### Rollback / safety notes
+
+* On authentication incident, first set `EDMP_OIDC_REQUIRED=false` to restore controlled header fallback in emergency mode.
+* Keep prior key material available until new-key validation is complete across all clients.
+* Do not rotate issuer and secret simultaneously unless a tested dual-step plan is in place.
