@@ -18,6 +18,7 @@ EDMP keeps stable APIs under `/api/v1/...` and treats `v1` as the current compat
 ## Compatibility checks
 
 * Contract regression tests in `backend/tests/test_api_versioning_contracts.py` protect critical response keys for stable endpoints.
+* OpenAPI drift checks in `.github/scripts/check_openapi_contract.py` fail CI when critical implemented routes or schemas are missing from `docs/openapi.yaml`.
 * Tests also enforce that unsupported `X-API-Version` values are rejected with `unsupported_api_version`.
 
 ## Migration and communication process
@@ -28,3 +29,4 @@ When introducing a new major API version:
 2. Keep prior major version active during a documented transition window.
 3. Announce deprecation/removal milestones in docs and release notes.
 4. Update `docs/openapi.yaml` and run compatibility tests for both supported majors during overlap.
+5. Follow the shared [API change communication and deprecation checklist](api-change-management.md).

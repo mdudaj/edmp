@@ -72,7 +72,9 @@ For a short prioritized list, see [docs/roadmap.md](roadmap.md).
 * Public/control-plane APIs continue to bypass tenant resolution (e.g. `/api/v1/tenants`).
 * API requests may include `X-API-Version`; unsupported versions are rejected.
 * API responses include `X-API-Version` for compatibility diagnostics.
+* CI includes an OpenAPI contract drift gate to keep critical implemented routes and schemas aligned with `docs/openapi.yaml`.
 * See [API versioning policy](api-versioning.md) for deprecation and migration rules.
+* See [API change communication checklist](api-change-management.md) for rollout/deprecation communication.
 * See `docs/openapi.yaml` for the current HTTP surface (scaffold).
 
 ### Identity & access (authn/authz)

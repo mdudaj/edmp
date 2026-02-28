@@ -19,6 +19,8 @@ jobs:
         run: git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
       - name: Validate docs workflow rules
         run: python .github/scripts/check_docs_workflow.py --base-ref "${{ github.base_ref }}"
+      - name: Validate OpenAPI contract drift gate
+        run: python .github/scripts/check_openapi_contract.py
 
   backend-tests:
     needs: docs-gate

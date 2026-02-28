@@ -41,6 +41,7 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 35. **OIDC rollout and key rotation operations**: documented phased `EDMP_OIDC_REQUIRED` rollout, JWT secret rotation sequence, smoke checks, and rollback guidance for operators (see `docs/operations-runbooks.md` and `docs/identity.md`).
 36. **Pagination and list endpoint performance hardening**: added bounded default pagination and page-size caps for high-volume list APIs with pagination regression and baseline latency checks (see `docs/performance-baseline.md`).
 37. **Operational dashboards and alert rules**: defined dashboard panels for API/worker/queue health, alert severities and thresholds, and explicit alert-to-runbook triage mappings (see `docs/operations-dashboards-alerts.md`).
+38. **API contract drift gates and consumer safety checks**: added OpenAPI-to-route/schema drift checks, expanded critical contract regression tests, and standardized API change/deprecation communication checklist (see `docs/api-versioning.md` and `docs/api-change-management.md`).
 
 ## Near-term (next)
 

@@ -84,3 +84,62 @@ def test_project_and_ingestion_contract_fields_are_stable():
         ingestion_resp.json(),
         {'id', 'project_id', 'connector', 'source', 'mode', 'status', 'created_at', 'updated_at'},
     )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_stewardship_orchestration_and_agent_contract_fields_are_stable():
+    host = _create_tenant_host()
+    client = Client()
+
+    stewardship_resp = client.post(
+        '/api/v1/stewardship/items',
+        data=json.dumps({'item_type': 'quality_exception', 'subject_ref': 'asset:warehouse.sales.orders'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_API_VERSION='v1',
+    )
+    assert stewardship_resp.status_code == 201
+    _assert_contract_keys(
+        stewardship_resp.json(),
+        {'id', 'item_type', 'subject_ref', 'status', 'severity', 'resolution', 'created_at', 'updated_at'},
+    )
+
+    ingestion_resp = client.post(
+        '/api/v1/ingestions',
+        data=json.dumps({'connector': 'dbt', 'source': {}}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_API_VERSION='v1',
+    )
+    assert ingestion_resp.status_code == 201
+
+    workflow_resp = client.post(
+        '/api/v1/orchestration/workflows',
+        data=json.dumps(
+            {
+                'name': 'nightly-refresh',
+                'steps': [{'step_id': 'extract', 'ingestion_id': ingestion_resp.json()['id']}],
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_API_VERSION='v1',
+    )
+    assert workflow_resp.status_code == 201
+    _assert_contract_keys(
+        workflow_resp.json(),
+        {'id', 'name', 'status', 'trigger_type', 'steps', 'created_at', 'updated_at'},
+    )
+
+    agent_resp = client.post(
+        '/api/v1/agent/runs',
+        data=json.dumps({'prompt': 'Summarize incidents', 'allowed_tools': ['catalog.search']}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_API_VERSION='v1',
+    )
+    assert agent_resp.status_code == 201
+    _assert_contract_keys(
+        agent_resp.json(),
+        {'id', 'status', 'prompt', 'allowed_tools', 'actor_id', 'created_at', 'updated_at'},
+    )
