@@ -15,6 +15,11 @@ tags:
   - name: assets
   - name: ingestions
   - name: lineage
+  - name: projects
+  - name: stewardship
+  - name: orchestration
+  - name: agent
+  - name: ui-operations
 paths:
   /healthz:
     get:
@@ -417,7 +422,627 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-components:
+  /api/v1/projects:
+    get:
+      tags: [projects]
+      summary: List projects (tenant-scoped)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project list
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+                required: [items]
+    post:
+      tags: [projects]
+      summary: Create project (tenant-scoped)
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/stewardship/items:
+    get:
+      tags: [stewardship]
+      summary: List stewardship items (tenant-scoped)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, in_review, blocked, resolved, dismissed]
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+        - name: item_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [quality_issue, privacy_request, access_review, policy_exception]
+        - name: assignee
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Stewardship items
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StewardshipItem'
+                required: [items]
+    post:
+      tags: [stewardship]
+      summary: Create a stewardship item (tenant-scoped)
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStewardshipItemRequest'
+      responses:
+        '201':
+          description: Stewardship item created
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StewardshipItem'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/stewardship/items/{item_id}/transition:
+    post:
+      tags: [stewardship]
+      summary: Transition a stewardship item (tenant-scoped)
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StewardshipTransitionRequest'
+      responses:
+        '200':
+          description: Stewardship item transitioned
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StewardshipItem'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/orchestration/workflows:
+    get:
+      tags: [orchestration]
+      summary: List orchestration workflows (tenant-scoped)
+      parameters:
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, disabled]
+        - name: trigger_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [event, schedule, manual]
+      responses:
+        '200':
+          description: Orchestration workflow list
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrchestrationWorkflow'
+                required: [items]
+    post:
+      tags: [orchestration]
+      summary: Create orchestration workflow (tenant-scoped)
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrchestrationWorkflowRequest'
+      responses:
+        '201':
+          description: Orchestration workflow created
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrchestrationWorkflow'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Referenced project or ingestion not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/orchestration/runs:
+    get:
+      tags: [orchestration]
+      summary: List orchestration runs (tenant-scoped)
+      parameters:
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: workflow_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [queued, running, succeeded, failed, cancelled]
+      responses:
+        '200':
+          description: Orchestration run list
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrchestrationRun'
+                required: [items]
+    post:
+      tags: [orchestration]
+      summary: Queue orchestration run (tenant-scoped)
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrchestrationRunRequest'
+      responses:
+        '201':
+          description: Orchestration run queued
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrchestrationRun'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Referenced workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/orchestration/runs/{run_id}/transition:
+    post:
+      tags: [orchestration]
+      summary: Transition orchestration run (start or cancel)
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrchestrationRunTransitionRequest'
+      responses:
+        '200':
+          description: Orchestration run transitioned
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrchestrationRun'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/agent/runs:
+    get:
+      tags: [agent]
+      summary: List agent runs (tenant-scoped)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [queued, running, completed, failed, cancelled, timed_out]
+      responses:
+        '200':
+          description: Agent runs
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentRun'
+                required: [items]
+    post:
+      tags: [agent]
+      summary: Create an agent run (tenant-scoped)
+      parameters:
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentRunRequest'
+      responses:
+        '201':
+          description: Agent run created
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRun'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/agent/runs/{run_id}/transition:
+    post:
+      tags: [agent]
+      summary: Transition an agent run
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRoles'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRunTransitionRequest'
+      responses:
+        '200':
+          description: Agent run transitioned
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRun'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/ui/operations/dashboard:
+    get:
+      tags: [ui-operations]
+      summary: Get operations dashboard aggregate data
+      parameters:
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Dashboard payload
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UiOperationsDashboardResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/ui/operations/stewardship-workbench:
+    get:
+      tags: [ui-operations]
+      summary: Get stewardship workbench rows and actions
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, in_review, blocked, resolved, dismissed]
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+      responses:
+        '200':
+          description: Stewardship workbench payload
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UiOperationsStewardshipWorkbenchResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/ui/operations/orchestration-monitor:
+    get:
+      tags: [ui-operations]
+      summary: Get orchestration monitor payload
+      parameters:
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Orchestration monitor payload
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UiOperationsOrchestrationMonitorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/ui/operations/agent-monitor:
+    get:
+      tags: [ui-operations]
+      summary: Get agent monitor payload
+      parameters:
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Agent monitor payload
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UiOperationsAgentMonitorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  components:
   parameters:
     XCorrelationId:
       name: X-Correlation-Id
@@ -621,12 +1246,391 @@ components:
       properties:
         connector:
           type: string
+        project_id:
+          type: string
+          format: uuid
         source:
           type: object
           additionalProperties: true
         mode:
           type: string
       required: [connector, source]
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        code:
+          type: string
+          nullable: true
+        institution_ref:
+          type: string
+          nullable: true
+        status:
+          type: string
+          example: active
+        sync_config:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, name, status, sync_config, created_at, updated_at]
+    CreateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        institution_ref:
+          type: string
+        status:
+          type: string
+        sync_config:
+          type: object
+          additionalProperties: true
+      required: [name]
+    StewardshipItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        item_type:
+          type: string
+          enum: [quality_issue, privacy_request, access_review, policy_exception]
+        subject_ref:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        status:
+          type: string
+          enum: [open, in_review, blocked, resolved, dismissed]
+        assignee:
+          type: string
+          nullable: true
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+        resolution:
+          type: object
+          additionalProperties: true
+        actor_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, item_type, subject_ref, severity, status, resolution, created_at, updated_at]
+    CreateStewardshipItemRequest:
+      type: object
+      properties:
+        item_type:
+          type: string
+          enum: [quality_issue, privacy_request, access_review, policy_exception]
+        subject_ref:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        assignee:
+          type: string
+        due_at:
+          type: string
+          format: date-time
+      required: [item_type, subject_ref]
+    StewardshipTransitionRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [assign, start_review, block, resolve, dismiss, reopen]
+        assignee:
+          type: string
+        resolution:
+          type: object
+          additionalProperties: true
+      required: [action]
+    OrchestrationStep:
+      type: object
+      properties:
+        step_id:
+          type: string
+        ingestion_id:
+          type: string
+          format: uuid
+      required: [step_id, ingestion_id]
+    OrchestrationWorkflow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        trigger_type:
+          type: string
+          enum: [event, schedule, manual]
+        trigger_value:
+          type: string
+          nullable: true
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrchestrationStep'
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, name, trigger_type, steps, status, created_at, updated_at]
+    CreateOrchestrationWorkflowRequest:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        trigger_type:
+          type: string
+          enum: [event, schedule, manual]
+        trigger_value:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrchestrationStep'
+      required: [name, steps]
+    OrchestrationRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        workflow_id:
+          type: string
+          format: uuid
+        trigger_context:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, cancelled]
+        step_results:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        error_message:
+          type: string
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, workflow_id, trigger_context, status, step_results, created_at, updated_at]
+    CreateOrchestrationRunRequest:
+      type: object
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+        trigger_context:
+          type: object
+          additionalProperties: true
+      required: [workflow_id]
+    OrchestrationRunTransitionRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [start, cancel]
+      required: [action]
+    AgentRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        actor_id:
+          type: string
+          nullable: true
+        prompt:
+          type: string
+        allowed_tools:
+          type: array
+          items:
+            type: string
+        timeout_seconds:
+          type: integer
+        status:
+          type: string
+          enum: [queued, running, completed, failed, cancelled, timed_out]
+        output:
+          type: object
+          additionalProperties: true
+        error_message:
+          type: string
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, prompt, allowed_tools, timeout_seconds, status, output, created_at, updated_at]
+    CreateAgentRunRequest:
+      type: object
+      properties:
+        prompt:
+          type: string
+        allowed_tools:
+          type: array
+          items:
+            type: string
+        timeout_seconds:
+          type: integer
+          minimum: 5
+          maximum: 3600
+        start_now:
+          type: boolean
+        output:
+          type: object
+          additionalProperties: true
+      required: [prompt]
+    AgentRunTransitionRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [start, complete, fail, cancel, materialize_timeouts]
+        output:
+          type: object
+          additionalProperties: true
+        error_message:
+          type: string
+      required: [action]
+    UiCapabilities:
+      type: object
+      additionalProperties:
+        type: boolean
+    UiOperationsDashboardResponse:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        cards:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: integer
+        capabilities:
+          $ref: '#/components/schemas/UiCapabilities'
+      required: [cards, capabilities]
+    StewardshipWorkbenchItem:
+      allOf:
+        - $ref: '#/components/schemas/StewardshipItem'
+        - type: object
+          properties:
+            allowed_actions:
+              type: array
+              items:
+                type: string
+    UiOperationsStewardshipWorkbenchResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StewardshipWorkbenchItem'
+        capabilities:
+          $ref: '#/components/schemas/UiCapabilities'
+      required: [items, capabilities]
+    UiOperationsOrchestrationMonitorResponse:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        workflows:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrchestrationWorkflow'
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrchestrationRun'
+        capabilities:
+          $ref: '#/components/schemas/UiCapabilities'
+      required: [workflows, runs, capabilities]
+    UiOperationsAgentMonitorResponse:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentRun'
+        capabilities:
+          $ref: '#/components/schemas/UiCapabilities'
+      required: [runs, capabilities]
     LineageEdge:
       type: object
       properties:
