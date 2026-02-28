@@ -21,6 +21,21 @@ This note defines a delivery workflow for agent-assisted implementation that imp
 
 `Planner -> Coder -> QA -> Reviewer -> Integrator`
 
+### Parallel lane execution (Copilot `/fleet`)
+
+Use parallel lanes for independent slices while preserving the same handoff chain:
+
+`Planner -> (Coder -> QA -> Reviewer)xN -> Integrator`
+
+Operator flow:
+
+1. enable fleet mode (`/fleet`) and create one lane per independent issue/slice,
+2. assign each lane the same role sequence (`Planner -> Coder -> QA -> Reviewer`),
+3. use `/tasks` to monitor lane progress and blockers,
+4. integrate only lanes that pass shared acceptance checks.
+
+Do not run dependent slices in parallel if one lane requires outputs from another.
+
 Reflection edges:
 
 * `QA -> Coder` for test failures.
@@ -38,6 +53,16 @@ Each handoff must include:
 * explicit done/blocker state
 
 Handoffs without this contract should be rejected and returned.
+
+### Issue contract (required before coding)
+
+Each execution issue must include:
+
+* Objective
+* Deliverables checklist
+* Acceptance criteria
+* Dependencies (`depends on` / `blocks`)
+* References to roadmap/design docs
 
 ## Resources to expose (to reduce looping)
 
@@ -65,6 +90,15 @@ A task is complete only when:
 * required tests/lint/build checks pass,
 * reviewer signs off on correctness/security concerns,
 * and integration gates pass without open blockers.
+
+### Shared acceptance checks (merge gate)
+
+Every lane must pass the same merge gate before integration:
+
+1. Docs workflow gate (`.github/scripts/check_docs_workflow.py`)
+2. Backend tests (`pytest -q`)
+3. Reviewer sign-off for correctness/security risks
+4. Issue checklist updated with completed deliverables and acceptance criteria
 
 ## End-to-end execution policy (mandatory)
 
