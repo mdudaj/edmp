@@ -67,6 +67,7 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 61. **Role-enforcement contract coverage for identity/notification/member APIs**: expanded API versioning contract tests with `EDMP_ENFORCE_ROLES` enabled to verify stable forbidden error envelopes and allowed list response contracts for user directory, notification dispatch, and project member listing endpoints (see `backend/tests/test_api_versioning_contracts.py`).
 62. **OIDC/JWT coverage for new identity/notification/member APIs**: expanded OIDC auth tests to verify required-bearer behavior and role-gated access across user directory, notification dispatch, and project member list endpoints under `EDMP_OIDC_REQUIRED` + `EDMP_ENFORCE_ROLES` (see `backend/tests/test_oidc_jwt_auth.py`).
 63. **OIDC/JWT coverage for invitation accept and notification retry**: expanded OIDC auth tests to verify invitation accept requires bearer authentication and notification retry remains role-gated under `EDMP_OIDC_REQUIRED` + `EDMP_ENFORCE_ROLES` (see `backend/tests/test_oidc_jwt_auth.py`).
+64. **OIDC auth response version-header coverage**: expanded OIDC auth tests to verify `X-API-Version: v1` is consistently returned on auth failures and role-gated errors across user directory, invitation accept, and notification dispatch/retry endpoints (see `backend/tests/test_oidc_jwt_auth.py`).
 
 ## Near-term (next)
 

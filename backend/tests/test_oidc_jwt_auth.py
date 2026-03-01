@@ -338,3 +338,67 @@ def test_oidc_required_for_invitation_accept_and_role_gated_notification_retry(m
         HTTP_AUTHORIZATION=f'Bearer {editor_token}',
     )
     assert retry_with_editor.status_code == 200
+
+
+@pytest.mark.django_db(transaction=True)
+def test_oidc_auth_responses_include_api_version_header_for_new_endpoints(monkeypatch):
+    monkeypatch.setenv('EDMP_OIDC_REQUIRED', 'true')
+    monkeypatch.setenv('EDMP_ENFORCE_ROLES', 'true')
+    monkeypatch.setenv('EDMP_OIDC_JWT_SECRET', 'secret-a')
+    host, schema = _create_tenant_host_and_schema()
+    client = Client()
+
+    missing_token_users = client.get('/api/v1/users', HTTP_HOST=host)
+    assert missing_token_users.status_code == 401
+    assert missing_token_users.json()['error'] == 'missing_bearer_token'
+    assert missing_token_users.headers['X-API-Version'] == 'v1'
+
+    reader_token = _make_hs256_jwt(
+        {
+            'sub': 'reader@example.com',
+            'roles': ['catalog.reader'],
+            'tid': schema,
+            'exp': int(time.time()) + 600,
+        },
+        'secret-a',
+    )
+    forbidden_dispatch = client.post(
+        '/api/v1/notifications/dispatch',
+        data=json.dumps({'limit': 1}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_AUTHORIZATION=f'Bearer {reader_token}',
+    )
+    assert forbidden_dispatch.status_code == 403
+    assert forbidden_dispatch.json()['error'] == 'forbidden'
+    assert forbidden_dispatch.headers['X-API-Version'] == 'v1'
+
+    accept_missing_token = client.post(
+        '/api/v1/projects/invitations/accept',
+        data=json.dumps({'token': 'placeholder'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+    )
+    assert accept_missing_token.status_code == 401
+    assert accept_missing_token.json()['error'] == 'missing_bearer_token'
+    assert accept_missing_token.headers['X-API-Version'] == 'v1'
+
+    editor_token = _make_hs256_jwt(
+        {
+            'sub': 'editor@example.com',
+            'roles': ['catalog.editor'],
+            'tid': schema,
+            'exp': int(time.time()) + 600,
+        },
+        'secret-a',
+    )
+    retry_missing = client.post(
+        '/api/v1/notifications/00000000-0000-0000-0000-000000000000/retry',
+        data=json.dumps({}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_AUTHORIZATION=f'Bearer {editor_token}',
+    )
+    assert retry_missing.status_code == 404
+    assert retry_missing.json()['error'] == 'notification_not_found'
+    assert retry_missing.headers['X-API-Version'] == 'v1'
