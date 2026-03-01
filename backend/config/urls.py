@@ -81,6 +81,8 @@ from core.views import (
     orchestration_runs,
     orchestration_workflows,
     print_job_detail,
+    print_gateway_heartbeat,
+    print_gateways,
     print_job_status,
     print_jobs,
     project_member_lifecycle,
@@ -219,6 +221,12 @@ urlpatterns = [
     path('api/v1/printing/jobs', print_jobs, name='print_jobs'),
     path('api/v1/printing/jobs/<uuid:job_id>', print_job_detail, name='print_job_detail'),
     path('api/v1/printing/jobs/<uuid:job_id>/status', print_job_status, name='print_job_status'),
+    path('api/v1/printing/gateways', print_gateways, name='print_gateways'),
+    path(
+        'api/v1/printing/gateways/<uuid:gateway_id>/heartbeat',
+        print_gateway_heartbeat,
+        name='print_gateway_heartbeat',
+    ),
     path('api/v1/notebooks/workspaces', notebook_workspaces, name='notebook_workspaces'),
     path(
         'api/v1/notebooks/workspaces/<uuid:workspace_id>/sessions',

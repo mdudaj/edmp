@@ -688,6 +688,30 @@ class PrintJob(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+class PrintGateway(models.Model):
+    class Status(models.TextChoices):
+        ONLINE = "online"
+        OFFLINE = "offline"
+        DEGRADED = "degraded"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    gateway_ref = models.CharField(max_length=128, unique=True)
+    display_name = models.CharField(max_length=200)
+    site_ref = models.CharField(max_length=200, blank=True, default="")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.OFFLINE)
+    capabilities = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    last_seen_version = models.CharField(max_length=64, blank=True, default="")
+    last_heartbeat_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "-updated_at"], name="print_gateway_status_idx"),
+        ]
+
+
 class CollaborationDocument(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=200)

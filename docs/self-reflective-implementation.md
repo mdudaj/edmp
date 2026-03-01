@@ -36,6 +36,21 @@ Operator flow:
 
 Do not run dependent slices in parallel if one lane requires outputs from another.
 
+### Parallel orchestration profile (Claude + Copilot)
+
+Adopt the same operator model across tools:
+
+* Run multiple independent sessions in parallel (practical default: 4-8 local lanes; scale higher when tasks are truly independent).
+* Keep each lane single-purpose and explicitly scoped.
+* Treat the operator as orchestrator: assign, monitor, and integrate rather than waiting on one long session.
+* Promote only lanes that pass shared acceptance checks.
+
+Portable template artifacts for new repositories are provided under `templates/agentic-workflow/` and can be instantiated with:
+
+```bash
+.github/scripts/scaffold_agentic_workflow.sh /path/to/target/repo
+```
+
 Reflection edges:
 
 * `QA -> Coder` for test failures.
@@ -83,6 +98,20 @@ Template: use `.github/ISSUE_TEMPLATE/delivery-work-item.md` for consistent issu
 * Mandatory root-cause note before each retry.
 * Prefer smallest safe fix; avoid speculative broad rewrites.
 * Escalate to Planner when the same failure signature repeats.
+
+## Fast feedback profile (new)
+
+Use a two-speed execution pattern to reduce local cycle time while preserving full quality gates:
+
+1. **Targeted loop (default while coding)**
+   * Run only tests directly related to changed surfaces.
+   * Command: `.github/scripts/local_fast_feedback.sh <pytest selectors>`
+   * Example: `.github/scripts/local_fast_feedback.sh tests/test_printing_api.py -k gateway`
+2. **Pre-integration loop (required before handoff)**
+   * Run docs/openapi checks and broad backend validation.
+   * Command: `.github/scripts/local_fast_feedback.sh --full-gate`
+
+This keeps short iterations fast but still enforces the same merge-gate expectations before integration.
 
 ## Definition of done
 

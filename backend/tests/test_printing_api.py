@@ -179,3 +179,105 @@ def test_printing_role_enforcement_when_enabled(monkeypatch):
         HTTP_X_USER_ROLES='catalog.reader',
     )
     assert allowed_read.status_code == 200
+
+
+@pytest.mark.django_db(transaction=True)
+def test_print_gateway_lifecycle_and_heartbeat():
+    host, _ = _create_tenants()
+    client = Client()
+
+    created = client.post(
+        '/api/v1/printing/gateways',
+        data=json.dumps(
+            {
+                'gateway_ref': 'gw-dc-a-01',
+                'display_name': 'DC-A Gateway',
+                'status': 'offline',
+                'capabilities': ['zpl'],
+                'metadata': {'site': 'dc-a'},
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+    )
+    assert created.status_code == 201
+    gateway_id = created.json()['id']
+
+    listed = client.get('/api/v1/printing/gateways', HTTP_HOST=host)
+    assert listed.status_code == 200
+    assert len(listed.json()['items']) == 1
+
+    heartbeat = client.post(
+        f'/api/v1/printing/gateways/{gateway_id}/heartbeat',
+        data=json.dumps(
+            {
+                'status': 'online',
+                'capabilities': ['zpl', 'pdf'],
+                'metadata': {'driver': 'zebra'},
+                'version': '1.2.3',
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+    )
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()['status'] == 'online'
+    assert heartbeat.json()['last_seen_version'] == '1.2.3'
+    assert heartbeat.json()['last_heartbeat_at'] is not None
+
+    filtered = client.get('/api/v1/printing/gateways?status=online', HTTP_HOST=host)
+    assert filtered.status_code == 200
+    assert len(filtered.json()['items']) == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_print_gateway_role_and_token_enforcement(monkeypatch):
+    monkeypatch.setenv('EDMP_ENFORCE_ROLES', 'true')
+    host, _ = _create_tenants()
+    client = Client()
+
+    denied_create = client.post(
+        '/api/v1/printing/gateways',
+        data=json.dumps({'gateway_ref': 'gw-1', 'display_name': 'GW 1'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.reader',
+    )
+    assert denied_create.status_code == 403
+
+    created = client.post(
+        '/api/v1/printing/gateways',
+        data=json.dumps({'gateway_ref': 'gw-1', 'display_name': 'GW 1'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='tenant.admin',
+    )
+    assert created.status_code == 201
+    gateway_id = created.json()['id']
+
+    denied_heartbeat = client.post(
+        f'/api/v1/printing/gateways/{gateway_id}/heartbeat',
+        data=json.dumps({'status': 'online'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+    )
+    assert denied_heartbeat.status_code == 403
+
+    monkeypatch.setenv('EDMP_PRINT_GATEWAY_HEARTBEAT_TOKEN', 'secret-token')
+    bad_token = client.post(
+        f'/api/v1/printing/gateways/{gateway_id}/heartbeat',
+        data=json.dumps({'status': 'online'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_PRINT_GATEWAY_TOKEN='wrong',
+    )
+    assert bad_token.status_code == 403
+
+    ok_token = client.post(
+        f'/api/v1/printing/gateways/{gateway_id}/heartbeat',
+        data=json.dumps({'status': 'online'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_PRINT_GATEWAY_TOKEN='secret-token',
+    )
+    assert ok_token.status_code == 200

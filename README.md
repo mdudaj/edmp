@@ -40,6 +40,7 @@ This repository contains an initial scaffold for a Kubernetes-native, multi-tena
 * [Data sharing](docs/data-sharing.md)
 * [Agentic AI execution](docs/agentic-ai.md)
 * [Self-reflective implementation workflow](docs/self-reflective-implementation.md)
+* [Portable agentic workflow template](templates/agentic-workflow/README.md)
 * [Metadata versioning](docs/metadata-versioning.md)
 * [Reference data management](docs/reference-data.md)
 * [Master data management](docs/master-data.md)
@@ -94,3 +95,13 @@ docker compose down
 ```
 
 Note: Django creates a separate test database (e.g. `test_edmp_test`) during `pytest`, so the configured `POSTGRES_USER` must have the `CREATEDB` privilege (or be a superuser).
+
+### Faster local feedback loop
+
+```bash
+# targeted change validation (example)
+.github/scripts/local_fast_feedback.sh tests/test_printing_api.py -k gateway
+
+# broader local gate (docs checks + non-perf backend suite)
+.github/scripts/local_fast_feedback.sh --full-gate
+```

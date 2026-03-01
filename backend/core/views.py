@@ -46,6 +46,7 @@ from .models import (
     PrivacyAction,
     PrivacyProfile,
     PrintJob,
+    PrintGateway,
     Project,
     ProjectInvitation,
     ProjectMembership,
@@ -579,6 +580,22 @@ def _print_job_to_dict(print_job: PrintJob) -> dict[str, Any]:
         'error_message': print_job.error_message or None,
         'created_at': print_job.created_at.isoformat(),
         'updated_at': print_job.updated_at.isoformat(),
+    }
+
+
+def _print_gateway_to_dict(gateway: PrintGateway) -> dict[str, Any]:
+    return {
+        'id': str(gateway.id),
+        'gateway_ref': gateway.gateway_ref,
+        'display_name': gateway.display_name,
+        'site_ref': gateway.site_ref or None,
+        'status': gateway.status,
+        'capabilities': gateway.capabilities,
+        'metadata': gateway.metadata,
+        'last_seen_version': gateway.last_seen_version or None,
+        'last_heartbeat_at': gateway.last_heartbeat_at.isoformat() if gateway.last_heartbeat_at else None,
+        'created_at': gateway.created_at.isoformat(),
+        'updated_at': gateway.updated_at.isoformat(),
     }
 
 
@@ -3265,6 +3282,109 @@ def print_job_status(request, job_id: str):
         rabbitmq_url=os.environ.get('RABBITMQ_URL'),
     )
     return JsonResponse(_print_job_to_dict(print_job))
+
+
+@csrf_exempt
+def print_gateways(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(
+            request,
+            {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+        )
+        if forbidden:
+            return forbidden
+        status_filter = (request.GET.get('status') or '').strip()
+        qs = PrintGateway.objects.order_by('-updated_at')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return JsonResponse({'items': [_print_gateway_to_dict(item) for item in qs]})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        gateway_ref = (payload.get('gateway_ref') or '').strip()
+        display_name = (payload.get('display_name') or '').strip()
+        if not gateway_ref or not display_name:
+            return JsonResponse({'error': 'gateway_ref and display_name are required'}, status=400)
+        if PrintGateway.objects.filter(gateway_ref=gateway_ref).exists():
+            return JsonResponse({'error': 'gateway_already_exists'}, status=409)
+        capabilities = payload.get('capabilities')
+        if capabilities is None:
+            capabilities = []
+        if not isinstance(capabilities, list):
+            return JsonResponse({'error': 'capabilities must be an array'}, status=400)
+        metadata = payload.get('metadata')
+        if metadata is None:
+            metadata = {}
+        if not isinstance(metadata, dict):
+            return JsonResponse({'error': 'metadata must be an object'}, status=400)
+        status_value = (payload.get('status') or PrintGateway.Status.OFFLINE).strip()
+        if status_value not in PrintGateway.Status.values:
+            return JsonResponse({'error': 'invalid_status'}, status=400)
+        gateway = PrintGateway.objects.create(
+            gateway_ref=gateway_ref,
+            display_name=display_name,
+            site_ref=(payload.get('site_ref') or '').strip(),
+            status=status_value,
+            capabilities=capabilities,
+            metadata=metadata,
+            last_seen_version=(payload.get('last_seen_version') or '').strip(),
+        )
+        return JsonResponse(_print_gateway_to_dict(gateway), status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def print_gateway_heartbeat(request, gateway_id: str):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    configured_token = (os.environ.get('EDMP_PRINT_GATEWAY_HEARTBEAT_TOKEN') or '').strip()
+    if configured_token:
+        supplied_token = (request.headers.get('X-Print-Gateway-Token') or '').strip()
+        if supplied_token != configured_token:
+            return JsonResponse({'error': 'invalid_gateway_token'}, status=403)
+    else:
+        forbidden = require_any_role(request, {'policy.admin', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+    try:
+        gateway = PrintGateway.objects.get(id=gateway_id)
+    except (ValidationError, PrintGateway.DoesNotExist):
+        return JsonResponse({'error': 'gateway_not_found'}, status=404)
+    payload = _parse_json_body(request)
+    if payload is None:
+        return JsonResponse({'error': 'invalid_json'}, status=400)
+    status_value = (payload.get('status') or PrintGateway.Status.ONLINE).strip()
+    if status_value not in PrintGateway.Status.values:
+        return JsonResponse({'error': 'invalid_status'}, status=400)
+    capabilities = payload.get('capabilities')
+    if capabilities is not None and not isinstance(capabilities, list):
+        return JsonResponse({'error': 'capabilities must be an array'}, status=400)
+    metadata = payload.get('metadata')
+    if metadata is not None and not isinstance(metadata, dict):
+        return JsonResponse({'error': 'metadata must be an object'}, status=400)
+    version = payload.get('version')
+    if version is not None and not isinstance(version, str):
+        return JsonResponse({'error': 'version must be a string'}, status=400)
+    gateway.status = status_value
+    gateway.last_heartbeat_at = timezone.now()
+    update_fields = ['status', 'last_heartbeat_at', 'updated_at']
+    if capabilities is not None:
+        gateway.capabilities = capabilities
+        update_fields.append('capabilities')
+    if metadata is not None:
+        gateway.metadata = metadata
+        update_fields.append('metadata')
+    if version is not None:
+        gateway.last_seen_version = version.strip()
+        update_fields.append('last_seen_version')
+    gateway.save(update_fields=update_fields)
+    return JsonResponse(_print_gateway_to_dict(gateway))
 
 
 @csrf_exempt
