@@ -24,6 +24,14 @@ def _assert_contract_keys(payload: dict, expected_keys: set[str]) -> None:
     assert expected_keys.issubset(set(payload.keys()))
 
 
+def _assert_error_response(resp, status_code: int, error_value: str | None = None) -> None:
+    assert resp.status_code == status_code
+    assert resp.headers['X-API-Version'] == 'v1'
+    _assert_contract_keys(resp.json(), {'error'})
+    if error_value is not None:
+        assert resp.json()['error'] == error_value
+
+
 @pytest.mark.django_db(transaction=True)
 def test_api_version_header_and_asset_contract_keys_are_stable():
     host = _create_tenant_host()
@@ -273,6 +281,14 @@ def test_user_and_notification_contract_fields_are_stable():
             'created_at',
         },
     )
+    retry_missing_resp = client.post(
+        '/api/v1/notifications/00000000-0000-0000-0000-000000000000/retry',
+        data=json.dumps({}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_API_VERSION='v1',
+    )
+    _assert_error_response(retry_missing_resp, 404, 'notification_not_found')
 
 
 @pytest.mark.django_db(transaction=True)
@@ -391,6 +407,15 @@ def test_membership_and_invitation_contract_fields_are_stable():
             'updated_at',
         },
     )
+    invalid_accept_resp = client.post(
+        '/api/v1/projects/invitations/accept',
+        data=json.dumps({'token': 'invalid-token'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_API_VERSION='v1',
+        HTTP_X_USER_ID='member-accept@example.com',
+    )
+    _assert_error_response(invalid_accept_resp, 404, 'invitation_not_found')
 
     resend_resp = client.post(
         f"/api/v1/projects/invitations/{new_invite.json()['invitation']['id']}/resend",
