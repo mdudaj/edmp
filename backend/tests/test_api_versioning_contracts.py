@@ -173,6 +173,9 @@ def test_user_and_notification_contract_fields_are_stable():
         detail_resp.json(),
         {'id', 'email', 'display_name', 'status', 'last_login_at', 'created_at', 'updated_at'},
     )
+    users_list_resp = client.get('/api/v1/users?page=1&page_size=10', HTTP_HOST=host, HTTP_X_API_VERSION='v1')
+    assert users_list_resp.status_code == 200
+    _assert_contract_keys(users_list_resp.json(), {'items', 'page', 'page_size', 'total'})
 
     notification_resp = client.post(
         '/api/v1/notifications',
@@ -214,6 +217,13 @@ def test_user_and_notification_contract_fields_are_stable():
     )
     assert dispatch_resp.status_code == 200
     _assert_contract_keys(dispatch_resp.json(), {'processed', 'sent', 'failed', 'dead_letter'})
+    notifications_list_resp = client.get(
+        '/api/v1/notifications?page=1&page_size=10',
+        HTTP_HOST=host,
+        HTTP_X_API_VERSION='v1',
+    )
+    assert notifications_list_resp.status_code == 200
+    _assert_contract_keys(notifications_list_resp.json(), {'items', 'page', 'page_size', 'total'})
 
 
 @pytest.mark.django_db(transaction=True)
@@ -262,6 +272,13 @@ def test_membership_and_invitation_contract_fields_are_stable():
     assert lifecycle_resp.status_code == 200
     _assert_contract_keys(lifecycle_resp.json()['membership'], {'id', 'project_id', 'user_email', 'role', 'status', 'created_at', 'updated_at'})
     _assert_contract_keys(lifecycle_resp.json()['history'], {'id', 'membership_id', 'action', 'created_at'})
+    members_resp = client.get(
+        f'/api/v1/projects/{project_id}/members?page=1&page_size=10',
+        HTTP_HOST=host,
+        HTTP_X_API_VERSION='v1',
+    )
+    assert members_resp.status_code == 200
+    _assert_contract_keys(members_resp.json(), {'items', 'page', 'page_size', 'total'})
 
     new_invite = client.post(
         f'/api/v1/projects/{project_id}/members/invite',

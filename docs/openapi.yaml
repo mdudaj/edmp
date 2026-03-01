@@ -950,13 +950,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/UserProfile'
-                required: [items]
+                $ref: '#/components/schemas/UserProfileListResponse'
     post:
       tags: [projects]
       summary: Create user profile (tenant-scoped)
@@ -1060,13 +1054,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/UserNotification'
-                required: [items]
+                $ref: '#/components/schemas/UserNotificationListResponse'
     post:
       tags: [ui-operations]
       summary: Create notification (tenant-scoped)
@@ -1158,13 +1146,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ProjectMembership'
-                required: [items]
+                $ref: '#/components/schemas/ProjectMembershipListResponse'
         '404':
           description: Project not found
           content:
@@ -1753,6 +1735,20 @@ paths:
           type: string
           format: date-time
       required: [id, email, status, created_at, updated_at]
+    UserProfileListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserProfile'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+      required: [items, page, page_size, total]
     CreateUserProfileRequest:
       type: object
       properties:
@@ -1798,6 +1794,20 @@ paths:
           type: string
           format: date-time
       required: [id, project_id, user_email, role, status, created_at, updated_at]
+    ProjectMembershipListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectMembership'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+      required: [items, page, page_size, total]
     ProjectMembershipRoleHistory:
       type: object
       properties:
@@ -1951,6 +1961,20 @@ paths:
           type: string
           format: date-time
       required: [id, user_email, notification_type, channel, provider, delivery_status, attempts, max_attempts, payload, created_at]
+    UserNotificationListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserNotification'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+      required: [items, page, page_size, total]
     CreateUserNotificationRequest:
       type: object
       properties:
