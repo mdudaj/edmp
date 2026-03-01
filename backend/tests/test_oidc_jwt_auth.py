@@ -515,3 +515,100 @@ def test_oidc_claim_validation_errors_on_new_endpoints(monkeypatch):
     assert invalid_issuer_accept.status_code == 401
     assert invalid_issuer_accept.json()['error'] == 'invalid_token_issuer'
     assert invalid_issuer_accept.headers['X-API-Version'] == 'v1'
+
+
+@pytest.mark.django_db(transaction=True)
+def test_oidc_bearer_and_role_enforcement_for_invitation_revoke_and_resend(monkeypatch):
+    monkeypatch.setenv('EDMP_OIDC_REQUIRED', 'true')
+    monkeypatch.setenv('EDMP_ENFORCE_ROLES', 'true')
+    monkeypatch.setenv('EDMP_OIDC_JWT_SECRET', 'secret-a')
+    host, schema = _create_tenant_host_and_schema()
+    client = Client()
+
+    editor_token = _make_hs256_jwt(
+        {
+            'sub': 'editor@example.com',
+            'roles': ['catalog.editor'],
+            'tid': schema,
+            'exp': int(time.time()) + 600,
+        },
+        'secret-a',
+    )
+    reader_token = _make_hs256_jwt(
+        {
+            'sub': 'reader@example.com',
+            'roles': ['catalog.reader'],
+            'tid': schema,
+            'exp': int(time.time()) + 600,
+        },
+        'secret-a',
+    )
+
+    project_resp = client.post(
+        '/api/v1/projects',
+        data=json.dumps({'name': 'OIDC Invite Admin Project'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_AUTHORIZATION=f'Bearer {editor_token}',
+    )
+    assert project_resp.status_code == 201
+    invite_resp = client.post(
+        f"/api/v1/projects/{project_resp.json()['id']}/members/invite",
+        data=json.dumps({'email': 'invite-admin@example.com', 'role': 'researcher'}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_AUTHORIZATION=f'Bearer {editor_token}',
+    )
+    assert invite_resp.status_code == 201
+    invitation_id = invite_resp.json()['invitation']['id']
+
+    revoke_missing_bearer = client.post(
+        f'/api/v1/projects/invitations/{invitation_id}/revoke',
+        data=json.dumps({}),
+        content_type='application/json',
+        HTTP_HOST=host,
+    )
+    assert revoke_missing_bearer.status_code == 401
+    assert revoke_missing_bearer.json()['error'] == 'missing_bearer_token'
+    assert revoke_missing_bearer.headers['X-API-Version'] == 'v1'
+
+    revoke_reader = client.post(
+        f'/api/v1/projects/invitations/{invitation_id}/revoke',
+        data=json.dumps({}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_AUTHORIZATION=f'Bearer {reader_token}',
+    )
+    assert revoke_reader.status_code == 403
+    assert revoke_reader.json()['error'] == 'forbidden'
+    assert revoke_reader.headers['X-API-Version'] == 'v1'
+
+    revoke_editor = client.post(
+        f'/api/v1/projects/invitations/{invitation_id}/revoke',
+        data=json.dumps({}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_AUTHORIZATION=f'Bearer {editor_token}',
+    )
+    assert revoke_editor.status_code == 200
+
+    resend_reader = client.post(
+        f'/api/v1/projects/invitations/{invitation_id}/resend',
+        data=json.dumps({}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_AUTHORIZATION=f'Bearer {reader_token}',
+    )
+    assert resend_reader.status_code == 403
+    assert resend_reader.json()['error'] == 'forbidden'
+    assert resend_reader.headers['X-API-Version'] == 'v1'
+
+    resend_editor = client.post(
+        f'/api/v1/projects/invitations/{invitation_id}/resend',
+        data=json.dumps({}),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_AUTHORIZATION=f'Bearer {editor_token}',
+    )
+    assert resend_editor.status_code == 200
+    assert 'invite_link' in resend_editor.json()
