@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}EDMP Workspace{% endblock %}</title>
+    <style>
+      body { margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f6f8fb; color: #111827; }
+      .layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+      .sidebar { background: #0f172a; color: #e2e8f0; padding: 20px 14px; }
+      .brand { font-weight: 700; margin-bottom: 18px; }
+      .nav a { display: block; color: #cbd5e1; text-decoration: none; padding: 10px 12px; border-radius: 10px; margin-bottom: 6px; }
+      .nav a.active, .nav a:hover { background: #1e293b; color: #fff; }
+      .content { padding: 24px; }
+      .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 12px; }
+      .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.06); padding: 14px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      .form-rows { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+      .form-row { display: block; }
+      .form-row .input, .form-row .select, .form-row .button { width: 100%; box-sizing: border-box; }
+      .input, .select { border: 1px solid #d1d5db; border-radius: 10px; padding: 8px 10px; font-size: 14px; background: #fff; }
+      .button { border: 1px solid #2563eb; color: #fff; background: #2563eb; border-radius: 10px; padding: 8px 12px; font-size: 14px; }
+      .chip { display: inline-block; border-radius: 999px; background: #e2e8f0; color: #334155; padding: 2px 8px; font-size: 12px; }
+      .muted { color: #64748b; }
+      table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; }
+      th, td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: left; font-size: 14px; }
+      th { background: #f8fafc; font-weight: 600; }
+      .banner { border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 14px; }
+      .banner.ok { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+      .banner.err { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+      @media (max-width: 920px) { .layout { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">EDMP Workspace</div>
+        <nav class="nav" aria-label="Workspace navigation">
+          <a href="/app" class="{% if active_nav == 'home' %}active{% endif %}">Home</a>
+          {% if payload.navigation.can_view_operations %}
+          <a href="/ui/operations/printing">Operations printing</a>
+          {% endif %}
+        </nav>
+      </aside>
+      <main class="content">
+        <div class="card" style="margin-bottom: 12px;">
+          <div><strong>Signed in as:</strong> {{ payload.user_context.user_id }}</div>
+          <div><strong>Tenant:</strong> {{ payload.user_context.tenant_schema }}</div>
+          <div>
+            <strong>Roles:</strong>
+            {% if payload.user_context.roles %}
+              {% for role in payload.user_context.roles %}
+              <span class="chip">{{ role }}</span>
+              {% endfor %}
+            {% else %}
+              <span class="muted">none</span>
+            {% endif %}
+          </div>
+        </div>
+        {% if ui_message %}
+          <div class="banner {% if ui_error %}err{% else %}ok{% endif %}">{{ ui_message }}</div>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+    <script>
+      async function edmpPortalAction(url, payload) {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        const current = new URL(window.location.href);
+        if (!response.ok) {
+          let message = "Action failed";
+          try {
+            const data = await response.json();
+            message = data.error || message;
+          } catch (_e) {}
+          current.searchParams.set("ui_message", message);
+          current.searchParams.set("ui_error", "1");
+          window.location.assign(current.toString());
+          return;
+        }
+        current.searchParams.set("ui_message", "Action completed");
+        current.searchParams.set("ui_error", "0");
+        window.location.assign(current.toString());
+      }
+    </script>
+  </body>
+</html>

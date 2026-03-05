@@ -62,3 +62,27 @@ helm upgrade --install edmp-platform deploy/helm/edmp-platform -n edmp --create-
 ## Operational response
 
 For operator first-response procedures and incident checkpoints, see [operations runbooks](operations-runbooks.md).
+
+## Portal and domain setup runbook (baseline)
+
+Primary domain topology under `edmp.co.tz`:
+
+* Shared platform services on designated subdomains (`odk`, `odkx`, `redcap`, `rapidsms`, `onlyoffice`).
+* Tenant workspace entry at `[tenant].edmp.co.tz`.
+* Tenant vertical systems at `[tenant].[lab].edmp.co.tz` and `[tenant].[edcs].edmp.co.tz`.
+
+Current backend routing baseline:
+
+* Explicit domain match via tenant domain records.
+* Tenant service-route registry (`/api/v1/tenants/services`) for enabled service mappings.
+* Host fallback resolver supports:
+  * `service.tenant.base-domain`
+  * `tenant.service.base-domain`
+  * `tenant.base-domain` (resolved via tenant_slug on enabled service routes)
+
+Operator checklist:
+
+1. Set `EDMP_BASE_DOMAIN=edmp.co.tz` in environment.
+2. Create tenant and primary domain.
+3. Register tenant service routes for enabled tenant systems (`lab`, `edcs`, workspace-linked services).
+4. Validate host resolution with smoke checks on `/` and `/app` for each intended domain pattern.

@@ -1,0 +1,75 @@
+{% extends base_template %}
+{% block title %}Stewardship Workbench{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div>
+    <h1>Stewardship Workbench</h1>
+    <p class="muted">Queue view with action affordances from API `allowed_actions`.</p>
+  </div>
+  <form method="get" class="right" aria-label="Stewardship filters">
+    <select class="select" name="status">
+      <option value="">All statuses</option>
+      {% for option in status_options %}
+      <option value="{{ option }}" {% if status_filter == option %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+    <select class="select" name="severity">
+      <option value="">All severities</option>
+      {% for option in severity_options %}
+      <option value="{{ option }}" {% if severity_filter == option %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+    <button class="button" type="submit">Apply</button>
+    <a class="button secondary" href="/ui/operations/stewardship">Clear</a>
+  </form>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>Subject</th>
+      <th>Status</th>
+      <th>Severity</th>
+      <th>Allowed actions</th>
+      <th>Run action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in payload.items %}
+    <tr>
+      <td>{{ item.subject_ref }}</td>
+      <td><span class="chip">{{ item.status }}</span></td>
+      <td><span class="chip">{{ item.severity }}</span></td>
+      <td class="actions">
+        {% for action in item.allowed_actions %}
+        <span class="chip">{{ action }}</span>
+        {% endfor %}
+      </td>
+      <td>
+        {% if payload.capabilities.can_manage_stewardship and item.allowed_actions %}
+          <div data-ui-action-form="stewardship" class="actions">
+            <select class="select" data-field="action" aria-label="Action">
+              {% for action in item.allowed_actions %}
+              <option value="{{ action }}">{{ action }}</option>
+              {% endfor %}
+            </select>
+            <input class="input" data-field="assignee" placeholder="assignee (for assign)" aria-label="Assignee">
+            <input class="input" data-field="resolution" placeholder='resolution JSON (for resolve)' aria-label="Resolution JSON">
+            <button
+              class="button secondary"
+              data-ui-action="stewardship"
+              onclick="submitStewardshipAction(this, '{{ item.id }}')"
+            >
+              run
+            </button>
+          </div>
+        {% else %}
+          <span class="muted">No actions</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" class="muted">No stewardship items</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

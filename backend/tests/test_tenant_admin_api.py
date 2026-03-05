@@ -15,7 +15,7 @@ def test_tenant_admin_api_can_create_tenant_and_route_requests():
     client = Client()
     created = client.post(
         '/api/v1/tenants',
-        data=json.dumps({'name': 'Tenant A', 'domain': host}),
+        data=json.dumps({'name': f"Tenant {uuid.uuid4().hex[:6]}", 'domain': host}),
         content_type='application/json',
         HTTP_HOST=control_host,
     )
@@ -85,3 +85,41 @@ def test_tenant_create_emits_event_when_configured(monkeypatch):
     assert calls[0]['payload']['correlation_id'] == 'corr-1'
     assert calls[0]['payload']['user_id'] == 'user-1'
     assert calls[1]['payload']['event_type'] == 'audit.tenant.created'
+
+
+@pytest.mark.django_db(transaction=True)
+def test_tenant_services_registry_create_and_list():
+    client = Client()
+    control_host = 'control.example'
+    created_tenant = client.post(
+        '/api/v1/tenants',
+        data=json.dumps({'name': f'Tenant {uuid.uuid4().hex[:6]}', 'domain': f"tenant-{uuid.uuid4().hex[:6]}.example"}),
+        content_type='application/json',
+        HTTP_HOST=control_host,
+    )
+    assert created_tenant.status_code == 201
+    tenant_id = created_tenant.json()['id']
+
+    created_route = client.post(
+        '/api/v1/tenants/services',
+        data=json.dumps(
+            {
+                'tenant_id': tenant_id,
+                'service_key': 'printing',
+                'tenant_slug': 'tenant-alpha',
+                'base_domain': 'platform.example.com',
+                'workspace_path': '/app',
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=control_host,
+    )
+    assert created_route.status_code == 201
+    assert created_route.json()['domain'] == 'printing.tenant-alpha.platform.example.com'
+
+    listed = client.get(
+        f'/api/v1/tenants/services?tenant_id={tenant_id}',
+        HTTP_HOST=control_host,
+    )
+    assert listed.status_code == 200
+    assert len(listed.json()['items']) == 1

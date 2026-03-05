@@ -1,3 +1,5 @@
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -6,11 +8,15 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import connection
 from django.db.models import Max, Q
 from django.db.utils import DatabaseError
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
+from django.template import TemplateDoesNotExist
+from django.template.loader import get_template
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -47,6 +53,7 @@ from .models import (
     PrivacyProfile,
     PrintJob,
     PrintGateway,
+    PrintTemplate,
     Project,
     ProjectInvitation,
     ProjectMembership,
@@ -68,7 +75,46 @@ from .models import (
     WorkflowTask,
 )
 from .notifications import dispatch_notification, process_notification_queue
+from .printing_renderers import render_label_preview
 from .tasks import evaluate_quality_rule, execute_connector_run, execute_retention_run
+
+
+DEFAULT_PRINT_TEMPLATE_DEFINITIONS: tuple[dict[str, Any], ...] = (
+    {
+        'name': 'Zebra QR Label (9-pack ready)',
+        'template_ref': 'zebra/participant-batch',
+        'output_format': PrintJob.Format.ZPL,
+        'content': '^XA^FO40,40^BQN,2,6^FDQA,[[label]]^FS^FO40,200^A0N,28,28^FD[[label]]^FS^XZ',
+        'sample_payload': {
+            'participant_prefix': 'MLTP2-MBY-KWJ-',
+            'range_start': 1,
+            'range_end': 1,
+            'serial_position': 'after_prefix',
+            'label_suffixes': [
+                'base',
+                'BLD-6mls',
+                'BLD-4mls',
+                'BLD-2mls',
+                'PLM1',
+                'PLM2',
+                'BLD-RNA',
+                'NA1',
+                'NA2',
+            ],
+        },
+    },
+    {
+        'name': 'A4 QR Sheet 65-up (38.1x21.2mm)',
+        'template_ref': 'a4/65-up',
+        'output_format': PrintJob.Format.PDF,
+        'content': 'QR [[content]]',
+        'sample_payload': {
+            'labels': ['MLTP2-MBY-KWJ-001'],
+            'pdf_sheet_preset': 'a4-38x21.2',
+            'batch_count': 5,
+        },
+    },
+)
 
 
 def _tenant_schema(request) -> str:
@@ -272,6 +318,73 @@ AGENT_TOOL_ALLOWLIST = {
     'lineage.read',
     'governance.read',
 }
+
+
+DEFAULT_PARTICIPANT_LABEL_SUFFIXES = [
+    '',
+    'BLD-6mls',
+    'BLD-4mls',
+    'BLD-2mls',
+    'PLM1',
+    'PLM2',
+    'BLD-RNA',
+    'NA1',
+    'NA2',
+]
+
+
+def _join_label_part(label: str, part: str) -> str:
+    value = (label or '').strip()
+    token = (part or '').strip()
+    if not token:
+        return value
+    if not value:
+        return token
+    if value.endswith('-'):
+        return f'{value}{token}'
+    return f'{value}-{token}'
+
+
+def _expand_default_participant_labels(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+    if isinstance(payload.get('labels'), list) and payload.get('labels'):
+        return payload
+    participant_prefix = (payload.get('participant_prefix') or '').strip()
+    range_start = payload.get('range_start')
+    range_end = payload.get('range_end')
+    serial_position = (payload.get('serial_position') or 'after_prefix').strip()
+    if serial_position not in {'after_prefix', 'at_end'}:
+        serial_position = 'after_prefix'
+    suffixes = payload.get('label_suffixes')
+    if isinstance(suffixes, list):
+        normalized_suffixes = []
+        for item in suffixes:
+            raw = str(item).strip()
+            if raw.lower() in {'base', 'root'}:
+                raw = ''
+            normalized_suffixes.append(raw.lstrip('-'))
+        suffixes = normalized_suffixes
+    else:
+        suffixes = DEFAULT_PARTICIPANT_LABEL_SUFFIXES
+    if not participant_prefix or range_start is None or range_end is None:
+        return payload
+    if not isinstance(range_start, int) or not isinstance(range_end, int):
+        return payload
+    if range_start <= 0 or range_end < range_start:
+        return payload
+    width = max(3, len(str(range_start)), len(str(range_end)))
+    labels: list[str] = []
+    for participant in range(range_start, range_end + 1):
+        serial = f'{participant:0{width}d}'
+        for suffix in suffixes:
+            if serial_position == 'at_end':
+                label = _join_label_part(participant_prefix, suffix)
+                labels.append(_join_label_part(label, serial))
+            else:
+                label = _join_label_part(participant_prefix, serial)
+                labels.append(_join_label_part(label, suffix))
+    return {**payload, 'labels': labels}
 
 
 def _classification_max_sensitivity(values: list[str]) -> int:
@@ -597,6 +710,48 @@ def _print_gateway_to_dict(gateway: PrintGateway) -> dict[str, Any]:
         'created_at': gateway.created_at.isoformat(),
         'updated_at': gateway.updated_at.isoformat(),
     }
+
+
+def _print_template_to_dict(template: PrintTemplate) -> dict[str, Any]:
+    return {
+        'id': str(template.id),
+        'name': template.name,
+        'template_ref': template.template_ref,
+        'output_format': template.output_format,
+        'content': template.content,
+        'sample_payload': template.sample_payload,
+        'created_at': template.created_at.isoformat(),
+        'updated_at': template.updated_at.isoformat(),
+    }
+
+
+def _default_print_template_dicts() -> list[dict[str, Any]]:
+    return [
+        {
+            'id': item['template_ref'],
+            'name': item['name'],
+            'template_ref': item['template_ref'],
+            'output_format': item['output_format'],
+            'content': item['content'],
+            'sample_payload': dict(item['sample_payload']),
+            'created_at': None,
+            'updated_at': None,
+        }
+        for item in DEFAULT_PRINT_TEMPLATE_DEFINITIONS
+    ]
+
+
+def _merge_templates_with_defaults(templates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    defaults = _default_print_template_dicts()
+    by_ref = {item['template_ref']: item for item in templates}
+    for default_item in defaults:
+        by_ref.setdefault(default_item['template_ref'], default_item)
+    ordered_refs = []
+    for item in [*templates, *defaults]:
+        ref = item['template_ref']
+        if ref not in ordered_refs:
+            ordered_refs.append(ref)
+    return [by_ref[ref] for ref in ordered_refs]
 
 
 def _collaboration_document_to_dict(
@@ -3157,6 +3312,19 @@ def print_jobs(request):
         print_payload = payload.get('payload') or {}
         if not isinstance(print_payload, dict):
             return JsonResponse({'error': 'payload must be an object'}, status=400)
+        if output_format == PrintJob.Format.ZPL:
+            print_payload = _expand_default_participant_labels(print_payload)
+        template = PrintTemplate.objects.filter(template_ref=template_ref).first()
+        if template and template.output_format != output_format:
+            return JsonResponse({'error': 'template_output_format_mismatch'}, status=400)
+        template_content = template.content if template else ''
+        gateway_metadata = {
+            'render_preview': render_label_preview(
+                output_format=output_format,
+                template_content=template_content,
+                payload=print_payload,
+            )
+        }
 
         print_job = PrintJob.objects.create(
             template_ref=template_ref,
@@ -3164,6 +3332,7 @@ def print_jobs(request):
             output_format=output_format,
             destination=destination,
             status=PrintJob.Status.PENDING,
+            gateway_metadata=gateway_metadata,
         )
         tenant_schema = _tenant_schema(request)
         maybe_publish_event(
@@ -3207,6 +3376,35 @@ def print_job_detail(request, job_id: str):
     except (ValidationError, PrintJob.DoesNotExist):
         return JsonResponse({'error': 'not_found'}, status=404)
     return JsonResponse(_print_job_to_dict(print_job))
+
+
+@csrf_exempt
+def print_job_preview_pdf(request, job_id: str):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    try:
+        print_job = PrintJob.objects.get(id=job_id)
+    except (ValidationError, PrintJob.DoesNotExist):
+        return JsonResponse({'error': 'not_found'}, status=404)
+    preview = (print_job.gateway_metadata or {}).get('render_preview') or {}
+    pdf_base64 = preview.get('pdf_base64')
+    if not isinstance(pdf_base64, str) or not pdf_base64.strip():
+        return JsonResponse({'error': 'preview_pdf_not_available'}, status=404)
+    try:
+        pdf_bytes = base64.b64decode(pdf_base64)
+    except (ValueError, binascii.Error):
+        return JsonResponse({'error': 'invalid_preview_pdf'}, status=500)
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = (
+        f'attachment; filename="print-job-{print_job.id}-preview.pdf"'
+    )
+    return response
 
 
 @csrf_exempt
@@ -3335,6 +3533,54 @@ def print_gateways(request):
             last_seen_version=(payload.get('last_seen_version') or '').strip(),
         )
         return JsonResponse(_print_gateway_to_dict(gateway), status=201)
+
+    return JsonResponse({'error': 'method_not_allowed'}, status=405)
+
+
+@csrf_exempt
+def print_templates(request):
+    if request.method == 'GET':
+        forbidden = require_any_role(
+            request,
+            {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+        )
+        if forbidden:
+            return forbidden
+        qs = PrintTemplate.objects.order_by('-updated_at')
+        return JsonResponse({'items': [_print_template_to_dict(item) for item in qs]})
+
+    if request.method == 'POST':
+        forbidden = require_any_role(request, {'catalog.editor', 'tenant.admin'})
+        if forbidden:
+            return forbidden
+        payload = _parse_json_body(request)
+        if payload is None:
+            return JsonResponse({'error': 'invalid_json'}, status=400)
+        name = (payload.get('name') or '').strip()
+        template_ref = (payload.get('template_ref') or '').strip()
+        output_format = (payload.get('output_format') or '').strip()
+        if not name or not template_ref or not output_format:
+            return JsonResponse(
+                {'error': 'name, template_ref, and output_format are required'},
+                status=400,
+            )
+        if output_format not in {PrintJob.Format.ZPL, PrintJob.Format.PDF}:
+            return JsonResponse({'error': 'invalid_output_format'}, status=400)
+        if PrintTemplate.objects.filter(template_ref=template_ref).exists():
+            return JsonResponse({'error': 'template_ref_already_exists'}, status=409)
+        sample_payload = payload.get('sample_payload')
+        if sample_payload is None:
+            sample_payload = {}
+        if not isinstance(sample_payload, dict):
+            return JsonResponse({'error': 'sample_payload must be an object'}, status=400)
+        template = PrintTemplate.objects.create(
+            name=name,
+            template_ref=template_ref,
+            output_format=output_format,
+            content=(payload.get('content') or '').strip(),
+            sample_payload=sample_payload,
+        )
+        return JsonResponse(_print_template_to_dict(template), status=201)
 
     return JsonResponse({'error': 'method_not_allowed'}, status=405)
 
@@ -6296,17 +6542,61 @@ def ui_operations_dashboard(request):
     )
     if forbidden:
         return forbidden
+    return JsonResponse(_ui_operations_dashboard_payload(request))
+
+
+@csrf_exempt
+def ui_operations_stewardship_workbench(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    return JsonResponse(_ui_operations_stewardship_payload(request))
+
+
+@csrf_exempt
+def ui_operations_orchestration_monitor(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    return JsonResponse(_ui_operations_orchestration_payload(request))
+
+
+@csrf_exempt
+def ui_operations_agent_monitor(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    return JsonResponse(_ui_operations_agent_payload(request))
+
+
+def _ui_operations_dashboard_payload(request) -> dict[str, Any]:
     project_id = request.GET.get('project_id')
     roles = _request_roles(request)
     stewardship_qs = StewardshipItem.objects.all()
     workflow_qs = WorkflowRun.objects.all()
     orchestration_qs = OrchestrationRun.objects.all()
     agent_qs = AgentRun.objects.all()
+    print_job_qs = PrintJob.objects.all()
+    print_gateway_qs = PrintGateway.objects.all()
+    print_template_qs = PrintTemplate.objects.all()
     if project_id:
         orchestration_qs = orchestration_qs.filter(project_id=project_id)
-        agent_qs = agent_qs.filter(
-            prompt__icontains=f'project:{project_id}'
-        )
+        agent_qs = agent_qs.filter(prompt__icontains=f'project:{project_id}')
     stewardship_counts = {
         status: stewardship_qs.filter(status=status).count()
         for status in StewardshipItem.Status.values
@@ -6323,43 +6613,47 @@ def ui_operations_dashboard(request):
         status: agent_qs.filter(status=status).count()
         for status in AgentRun.Status.values
     }
-    return JsonResponse(
-        {
-            'project_id': project_id,
-            'cards': {
-                'stewardship': stewardship_counts,
-                'workflow': workflow_counts,
-                'orchestration': orchestration_counts,
-                'agent': agent_counts,
-            },
-            'capabilities': {
-                'can_view': bool(
-                    roles
-                    & {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'}
-                ),
-                'can_manage_stewardship': bool(roles & {'policy.admin', 'tenant.admin'}),
-                'can_queue_orchestration_runs': bool(
-                    roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
-                ),
-                'can_manage_orchestration': bool(roles & {'policy.admin', 'tenant.admin'}),
-                'can_manage_agents': bool(
-                    roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
-                ),
-            },
-        }
-    )
+    printing_counts = {
+        'jobs': {
+            status: print_job_qs.filter(status=status).count()
+            for status in PrintJob.Status.values
+        },
+        'gateways': {
+            status: print_gateway_qs.filter(status=status).count()
+            for status in PrintGateway.Status.values
+        },
+        'templates': print_template_qs.count(),
+    }
+    return {
+        'project_id': project_id,
+        'cards': {
+            'stewardship': stewardship_counts,
+            'workflow': workflow_counts,
+            'orchestration': orchestration_counts,
+            'agent': agent_counts,
+            'printing': printing_counts,
+        },
+        'capabilities': {
+            'can_view': bool(
+                roles
+                & {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'}
+            ),
+            'can_manage_stewardship': bool(roles & {'policy.admin', 'tenant.admin'}),
+            'can_queue_orchestration_runs': bool(
+                roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
+            ),
+            'can_manage_orchestration': bool(roles & {'policy.admin', 'tenant.admin'}),
+            'can_manage_agents': bool(
+                roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
+            ),
+            'can_manage_printing': bool(
+                roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
+            ),
+        },
+    }
 
 
-@csrf_exempt
-def ui_operations_stewardship_workbench(request):
-    if request.method != 'GET':
-        return JsonResponse({'error': 'method_not_allowed'}, status=405)
-    forbidden = require_any_role(
-        request,
-        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
-    )
-    if forbidden:
-        return forbidden
+def _ui_operations_stewardship_payload(request) -> dict[str, Any]:
     roles = _request_roles(request)
     can_manage = bool(roles & {'policy.admin', 'tenant.admin'})
     qs = StewardshipItem.objects.order_by('-created_at')
@@ -6398,21 +6692,10 @@ def ui_operations_stewardship_workbench(request):
                 allowed_actions.append('reopen')
         item_data['allowed_actions'] = sorted(set(allowed_actions))
         items.append(item_data)
-    return JsonResponse(
-        {'items': items, 'capabilities': {'can_manage_stewardship': can_manage}}
-    )
+    return {'items': items, 'capabilities': {'can_manage_stewardship': can_manage}}
 
 
-@csrf_exempt
-def ui_operations_orchestration_monitor(request):
-    if request.method != 'GET':
-        return JsonResponse({'error': 'method_not_allowed'}, status=405)
-    forbidden = require_any_role(
-        request,
-        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
-    )
-    if forbidden:
-        return forbidden
+def _ui_operations_orchestration_payload(request) -> dict[str, Any]:
     roles = _request_roles(request)
     project_id = request.GET.get('project_id')
     workflows_qs = OrchestrationWorkflow.objects.order_by('-created_at')
@@ -6420,23 +6703,204 @@ def ui_operations_orchestration_monitor(request):
     if project_id:
         workflows_qs = workflows_qs.filter(project_id=project_id)
         runs_qs = runs_qs.filter(project_id=project_id)
-    return JsonResponse(
-        {
-            'project_id': project_id,
-            'workflows': [_orchestration_workflow_to_dict(item) for item in workflows_qs[:100]],
-            'runs': [_orchestration_run_to_dict(item) for item in runs_qs[:100]],
-            'capabilities': {
-                'can_queue_runs': bool(
-                    roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
-                ),
-                'can_cancel_runs': bool(roles & {'policy.admin', 'tenant.admin'}),
-            },
-        }
+    can_queue_runs = bool(
+        roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
     )
+    can_cancel_runs = bool(roles & {'policy.admin', 'tenant.admin'})
+    runs = []
+    for item in runs_qs[:100]:
+        item_data = _orchestration_run_to_dict(item)
+        allowed_actions = []
+        if can_queue_runs and item.status == OrchestrationRun.Status.QUEUED:
+            allowed_actions.append('start')
+        if can_cancel_runs and item.status in {
+            OrchestrationRun.Status.QUEUED,
+            OrchestrationRun.Status.RUNNING,
+        }:
+            allowed_actions.append('cancel')
+        item_data['allowed_actions'] = allowed_actions
+        runs.append(item_data)
+    return {
+        'project_id': project_id,
+        'workflows': [_orchestration_workflow_to_dict(item) for item in workflows_qs[:100]],
+        'runs': runs,
+        'capabilities': {
+            'can_queue_runs': can_queue_runs,
+            'can_cancel_runs': can_cancel_runs,
+        },
+    }
+
+
+def _ui_operations_agent_payload(request) -> dict[str, Any]:
+    roles = _request_roles(request)
+    project_id = request.GET.get('project_id')
+    qs = AgentRun.objects.order_by('-created_at')
+    if project_id:
+        qs = qs.filter(prompt__icontains=f'project:{project_id}')
+    can_create_runs = bool(
+        roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
+    )
+    can_cancel_runs = bool(
+        roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
+    )
+    can_materialize_timeouts = bool(
+        roles & {'policy.admin', 'tenant.admin'}
+    )
+    runs = []
+    for item in qs[:100]:
+        item_data = _agent_run_to_dict(item)
+        allowed_actions = []
+        if can_create_runs and item.status == AgentRun.Status.QUEUED:
+            allowed_actions.append('start')
+        if can_create_runs and item.status == AgentRun.Status.RUNNING:
+            allowed_actions.append('complete')
+            allowed_actions.append('fail')
+        if can_cancel_runs and item.status in {
+            AgentRun.Status.QUEUED,
+            AgentRun.Status.RUNNING,
+        }:
+            allowed_actions.append('cancel')
+        if can_materialize_timeouts and item.status == AgentRun.Status.RUNNING:
+            allowed_actions.append('materialize_timeouts')
+        item_data['allowed_actions'] = allowed_actions
+        runs.append(item_data)
+    return {
+        'project_id': project_id,
+        'runs': runs,
+        'capabilities': {
+            'can_create_runs': can_create_runs,
+            'can_cancel_runs': can_cancel_runs,
+            'can_materialize_timeouts': can_materialize_timeouts,
+        },
+    }
+
+
+def _ui_operations_printing_payload(request) -> dict[str, Any]:
+    roles = _request_roles(request)
+    can_create_jobs = bool(roles & {'catalog.editor', 'tenant.admin'})
+    can_manage_jobs = bool(roles & {'policy.admin', 'tenant.admin'})
+    can_manage_gateways = bool(roles & {'policy.admin', 'tenant.admin'})
+    can_manage_templates = bool(roles & {'catalog.editor', 'tenant.admin'})
+
+    jobs_qs = PrintJob.objects.order_by('-created_at')
+    job_status_filter = (request.GET.get('job_status') or '').strip()
+    if job_status_filter:
+        jobs_qs = jobs_qs.filter(status=job_status_filter)
+
+    gateways_qs = PrintGateway.objects.order_by('-updated_at')
+    gateway_status_filter = (request.GET.get('gateway_status') or '').strip()
+    if gateway_status_filter:
+        gateways_qs = gateways_qs.filter(status=gateway_status_filter)
+    templates_qs = PrintTemplate.objects.order_by('-updated_at')
+
+    jobs = []
+    for item in jobs_qs[:200]:
+        item_data = _print_job_to_dict(item)
+        allowed_actions = []
+        if can_manage_jobs and item.status in {PrintJob.Status.PENDING, PrintJob.Status.RETRYING}:
+            allowed_actions.extend(
+                [
+                    PrintJob.Status.RETRYING,
+                    PrintJob.Status.COMPLETED,
+                    PrintJob.Status.FAILED,
+                ]
+            )
+        item_data['allowed_actions'] = sorted(set(allowed_actions))
+        jobs.append(item_data)
+
+    return {
+        'jobs': jobs,
+        'gateways': [_print_gateway_to_dict(item) for item in gateways_qs[:200]],
+        'templates': [_print_template_to_dict(item) for item in templates_qs[:200]],
+        'cards': {
+            'jobs': {
+                status: PrintJob.objects.filter(status=status).count()
+                for status in PrintJob.Status.values
+            },
+            'gateways': {
+                status: PrintGateway.objects.filter(status=status).count()
+                for status in PrintGateway.Status.values
+            },
+            'templates': PrintTemplate.objects.count(),
+        },
+        'capabilities': {
+            'can_create_jobs': can_create_jobs,
+            'can_manage_jobs': can_manage_jobs,
+            'can_manage_gateways': can_manage_gateways,
+            'can_manage_templates': can_manage_templates,
+        },
+    }
+
+
+def _user_portal_dashboard_payload(request) -> dict[str, Any]:
+    roles = _request_roles(request)
+    roles_enforced = os.environ.get('EDMP_ENFORCE_ROLES', '').lower() in {
+        '1',
+        'true',
+        'yes',
+    }
+    can_submit_print_jobs = (
+        bool(roles & {'catalog.editor', 'tenant.admin'}) if roles_enforced else True
+    )
+    can_manage_templates = (
+        bool(roles & {'catalog.editor', 'tenant.admin'}) if roles_enforced else True
+    )
+    can_manage_printers = (
+        bool(roles & {'policy.admin', 'tenant.admin'}) if roles_enforced else True
+    )
+    can_view_operations = (
+        bool(roles & {'catalog.editor', 'policy.admin', 'tenant.admin'})
+        if roles_enforced
+        else True
+    )
+    templates = _merge_templates_with_defaults(
+        [_print_template_to_dict(item) for item in PrintTemplate.objects.order_by('-updated_at')[:100]]
+    )[:100]
+    gateways = [_print_gateway_to_dict(item) for item in PrintGateway.objects.order_by('-updated_at')[:100]]
+    jobs = [_print_job_to_dict(item) for item in PrintJob.objects.order_by('-created_at')[:20]]
+    return {
+        'templates': templates,
+        'gateways': gateways,
+        'recent_jobs': jobs,
+        'cards': {
+            'templates': len(templates),
+            'printers': len(gateways),
+            'recent_jobs': len(jobs),
+        },
+        'user_context': {
+            'user_id': (request.headers.get('X-User-Id') or 'anonymous').strip(),
+            'roles': sorted(roles),
+            'tenant_schema': _tenant_schema(request),
+        },
+        'navigation': {'can_view_operations': can_view_operations},
+        'capabilities': {
+            'can_submit_print_jobs': can_submit_print_jobs,
+            'can_manage_templates': can_manage_templates,
+            'can_manage_printers': can_manage_printers,
+        },
+    }
+
+
+def _ui_base_template() -> str:
+    if settings.EDMP_UI_MATERIAL_ENABLED:
+        try:
+            get_template('material/base.html')
+            return 'material/base.html'
+        except TemplateDoesNotExist:
+            pass
+    return 'core/ui/base_fallback.html'
+
+
+def _ui_feedback_context(request) -> dict[str, Any]:
+    return {
+        'ui_message': (request.GET.get('ui_message') or '').strip(),
+        'ui_error': (request.GET.get('ui_error') or '').strip().lower()
+        in {'1', 'true', 'yes'},
+    }
 
 
 @csrf_exempt
-def ui_operations_agent_monitor(request):
+def ui_operations_dashboard_page(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'method_not_allowed'}, status=405)
     forbidden = require_any_role(
@@ -6445,27 +6909,136 @@ def ui_operations_agent_monitor(request):
     )
     if forbidden:
         return forbidden
-    roles = _request_roles(request)
-    project_id = request.GET.get('project_id')
-    qs = AgentRun.objects.order_by('-created_at')
-    if project_id:
-        qs = qs.filter(prompt__icontains=f'project:{project_id}')
-    return JsonResponse(
+    return render(
+        request,
+        'core/ui/operations_dashboard.html',
         {
-            'project_id': project_id,
-            'runs': [_agent_run_to_dict(item) for item in qs[:100]],
-            'capabilities': {
-                'can_create_runs': bool(
-                    roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
-                ),
-                'can_cancel_runs': bool(
-                    roles & {'catalog.editor', 'policy.admin', 'tenant.admin'}
-                ),
-                'can_materialize_timeouts': bool(
-                    roles & {'policy.admin', 'tenant.admin'}
-                ),
-            },
-        }
+            'base_template': _ui_base_template(),
+            'active_nav': 'dashboard',
+            'payload': _ui_operations_dashboard_payload(request),
+            'project_id': request.GET.get('project_id', ''),
+            **_ui_feedback_context(request),
+        },
+    )
+
+
+@csrf_exempt
+def ui_operations_stewardship_page(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    return render(
+        request,
+        'core/ui/operations_stewardship.html',
+        {
+            'base_template': _ui_base_template(),
+            'active_nav': 'stewardship',
+            'payload': _ui_operations_stewardship_payload(request),
+            'status_filter': request.GET.get('status', ''),
+            'severity_filter': request.GET.get('severity', ''),
+            'status_options': StewardshipItem.Status.values,
+            'severity_options': StewardshipItem.Severity.values,
+            **_ui_feedback_context(request),
+        },
+    )
+
+
+@csrf_exempt
+def ui_operations_orchestration_page(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    return render(
+        request,
+        'core/ui/operations_orchestration.html',
+        {
+            'base_template': _ui_base_template(),
+            'active_nav': 'orchestration',
+            'payload': _ui_operations_orchestration_payload(request),
+            'project_id': request.GET.get('project_id', ''),
+            **_ui_feedback_context(request),
+        },
+    )
+
+
+@csrf_exempt
+def ui_operations_agent_page(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    return render(
+        request,
+        'core/ui/operations_agent.html',
+        {
+            'base_template': _ui_base_template(),
+            'active_nav': 'agent',
+            'payload': _ui_operations_agent_payload(request),
+            'project_id': request.GET.get('project_id', ''),
+            **_ui_feedback_context(request),
+        },
+    )
+
+
+@csrf_exempt
+def ui_operations_printing_page(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    return render(
+        request,
+        'core/ui/operations_printing.html',
+        {
+            'base_template': _ui_base_template(),
+            'active_nav': 'printing',
+            'payload': _ui_operations_printing_payload(request),
+            'job_status_filter': request.GET.get('job_status', ''),
+            'gateway_status_filter': request.GET.get('gateway_status', ''),
+            'job_status_options': PrintJob.Status.values,
+            'gateway_status_options': PrintGateway.Status.values,
+            'job_format_options': PrintJob.Format.values,
+            **_ui_feedback_context(request),
+        },
+    )
+
+
+@csrf_exempt
+def user_portal_dashboard_page(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'method_not_allowed'}, status=405)
+    forbidden = require_any_role(
+        request,
+        {'catalog.reader', 'catalog.editor', 'policy.admin', 'tenant.admin'},
+    )
+    if forbidden:
+        return forbidden
+    return render(
+        request,
+        'core/ui/user_dashboard.html',
+        {
+            'active_nav': 'home',
+            'payload': _user_portal_dashboard_payload(request),
+            **_ui_feedback_context(request),
+        },
     )
 
 

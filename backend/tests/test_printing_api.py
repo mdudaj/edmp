@@ -281,3 +281,362 @@ def test_print_gateway_role_and_token_enforcement(monkeypatch):
         HTTP_X_PRINT_GATEWAY_TOKEN='secret-token',
     )
     assert ok_token.status_code == 200
+
+
+@pytest.mark.django_db(transaction=True)
+def test_print_template_lifecycle_and_tenant_scope():
+    host_a, host_b = _create_tenants()
+    client = Client()
+
+    created = client.post(
+        '/api/v1/printing/templates',
+        data=json.dumps(
+            {
+                'name': 'Shipping Label',
+                'template_ref': 'label/shipping-v2',
+                'output_format': 'zpl',
+                'content': '^XA^FO20,20^FDOrder:^FS',
+                'sample_payload': {'order_id': 'SO-123'},
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host_a,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert created.status_code == 201
+    assert created.json()['template_ref'] == 'label/shipping-v2'
+
+    listed_a = client.get('/api/v1/printing/templates', HTTP_HOST=host_a)
+    assert listed_a.status_code == 200
+    assert len(listed_a.json()['items']) == 1
+
+    listed_b = client.get('/api/v1/printing/templates', HTTP_HOST=host_b)
+    assert listed_b.status_code == 200
+    assert listed_b.json()['items'] == []
+
+
+@pytest.mark.django_db(transaction=True)
+def test_print_job_stores_render_preview_from_template():
+    host, _ = _create_tenants()
+    client = Client()
+    template = client.post(
+        '/api/v1/printing/templates',
+        data=json.dumps(
+            {
+                'name': 'Preview Template',
+                'template_ref': 'label/preview-v1',
+                'output_format': 'pdf',
+                'content': 'QR [[content]] for [[order_id]]',
+                'sample_payload': {'content': 'ABC', 'order_id': 'SO-1'},
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert template.status_code == 201
+
+    created = client.post(
+        '/api/v1/printing/jobs',
+        data=json.dumps(
+            {
+                'template_ref': 'label/preview-v1',
+                'output_format': 'pdf',
+                'destination': 'printer-a',
+                'payload': {'content': 'XYZ', 'order_id': 'SO-2'},
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert created.status_code == 201
+    preview = created.json()['gateway_metadata']['render_preview']
+    assert preview['engine'] == 'qrcode-reportlab-pylabels'
+    assert preview['rendered'] == 'QR XYZ for SO-2'
+
+
+@pytest.mark.django_db(transaction=True)
+def test_zebra_batch_labels_render_preview():
+    host, _ = _create_tenants()
+    client = Client()
+    template = client.post(
+        '/api/v1/printing/templates',
+        data=json.dumps(
+            {
+                'name': 'Zebra Participant Labels',
+                'template_ref': 'zebra/participant-batch',
+                'output_format': 'zpl',
+                'content': '^XA^FO40,40^BQN,2,6^FDQA,[[label]]^FS^XZ',
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert template.status_code == 201
+
+    labels = [
+        'MLTP2-MBY-KWJ-001',
+        'MLTP2-MBY-KWJ-001-BLD-6mls',
+        'MLTP2-MBY-KWJ-001-BLD-4mls',
+        'MLTP2-MBY-KWJ-001-BLD-2mls',
+        'MLTP2-MBY-KWJ-001-PLM1',
+        'MLTP2-MBY-KWJ-001-PLM2',
+        'MLTP2-MBY-KWJ-001-BLD-RNA',
+        'MLTP2-MBY-KWJ-001-NA1',
+        'MLTP2-MBY-KWJ-001-NA2',
+    ]
+    created = client.post(
+        '/api/v1/printing/jobs',
+        data=json.dumps(
+            {
+                'template_ref': 'zebra/participant-batch',
+                'output_format': 'zpl',
+                'destination': 'zebra-printer-1',
+                'payload': {'labels': labels},
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert created.status_code == 201
+    preview = created.json()['gateway_metadata']['render_preview']
+    assert preview['engine'] == 'zpl-inline'
+    assert preview['label_count'] == 9
+    assert 'MLTP2-MBY-KWJ-001-BLD-RNA' in preview['rendered']
+
+
+@pytest.mark.django_db(transaction=True)
+def test_zebra_default_batch_from_participant_range():
+    host, _ = _create_tenants()
+    client = Client()
+    template = client.post(
+        '/api/v1/printing/templates',
+        data=json.dumps(
+            {
+                'name': 'Zebra Participant Labels',
+                'template_ref': 'zebra/participant-range',
+                'output_format': 'zpl',
+                'content': '^XA^FO40,40^BQN,2,6^FDQA,[[label]]^FS^XZ',
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert template.status_code == 201
+
+    created = client.post(
+        '/api/v1/printing/jobs',
+        data=json.dumps(
+            {
+                'template_ref': 'zebra/participant-range',
+                'output_format': 'zpl',
+                'destination': 'zebra-printer-1',
+                'payload': {
+                    'participant_prefix': 'MLTP2-MBY-KWJ-',
+                    'range_start': 1,
+                    'range_end': 2,
+                },
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert created.status_code == 201
+    assert len(created.json()['payload']['labels']) == 18
+    assert created.json()['payload']['labels'][0] == 'MLTP2-MBY-KWJ-001'
+    assert created.json()['payload']['labels'][9] == 'MLTP2-MBY-KWJ-002'
+
+
+@pytest.mark.django_db(transaction=True)
+def test_zebra_range_supports_serial_at_end_and_custom_suffixes():
+    host, _ = _create_tenants()
+    client = Client()
+    template = client.post(
+        '/api/v1/printing/templates',
+        data=json.dumps(
+            {
+                'name': 'Zebra Participant Labels',
+                'template_ref': 'zebra/participant-range-end',
+                'output_format': 'zpl',
+                'content': '^XA^FO40,40^BQN,2,6^FDQA,[[label]]^FS^XZ',
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert template.status_code == 201
+
+    created = client.post(
+        '/api/v1/printing/jobs',
+        data=json.dumps(
+            {
+                'template_ref': 'zebra/participant-range-end',
+                'output_format': 'zpl',
+                'destination': 'zebra-printer-1',
+                'payload': {
+                    'participant_prefix': 'MLTP2-MBY-KWJ',
+                    'range_start': 1,
+                    'range_end': 1,
+                    'serial_position': 'at_end',
+                    'label_suffixes': ['base', 'BLD-6mls'],
+                },
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert created.status_code == 201
+    labels = created.json()['payload']['labels']
+    assert labels == ['MLTP2-MBY-KWJ-001', 'MLTP2-MBY-KWJ-BLD-6mls-001']
+
+
+@pytest.mark.django_db(transaction=True)
+def test_pdf_sheet_preview_with_labels_and_preset():
+    host, _ = _create_tenants()
+    client = Client()
+    template = client.post(
+        '/api/v1/printing/templates',
+        data=json.dumps(
+            {
+                'name': 'A4 Sheet Template',
+                'template_ref': 'a4/qr-sheet',
+                'output_format': 'pdf',
+                'content': 'QR [[content]]',
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert template.status_code == 201
+
+    created = client.post(
+        '/api/v1/printing/jobs',
+        data=json.dumps(
+            {
+                'template_ref': 'a4/qr-sheet',
+                'output_format': 'pdf',
+                'destination': 'office-printer-1',
+                'payload': {
+                    'labels': ['A4-001', 'A4-002', 'A4-003'],
+                    'pdf_sheet_preset': 'a4-38x21.2',
+                },
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert created.status_code == 201
+    preview = created.json()['gateway_metadata']['render_preview']
+    assert preview['engine'] == 'qrcode-reportlab-pylabels'
+    assert preview['sheet_preset'] == 'a4-38x21.2'
+    assert preview['label_count'] == 3
+    assert preview['layout']['grid'] == [5, 13]
+    assert preview['layout']['label_size_mm'] == [38.1, 21.2]
+    assert 'pdf_base64' in preview or 'render_error' in preview
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a4_65_labels_preview_downloadable_when_available():
+    host, _ = _create_tenants()
+    client = Client()
+    template = client.post(
+        '/api/v1/printing/templates',
+        data=json.dumps(
+            {
+                'name': 'A4 65-up',
+                'template_ref': 'a4/65-up',
+                'output_format': 'pdf',
+                'content': 'QR [[content]]',
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert template.status_code == 201
+
+    labels = [f'A4-{idx:03d}' for idx in range(1, 66)]
+    created = client.post(
+        '/api/v1/printing/jobs',
+        data=json.dumps(
+            {
+                'template_ref': 'a4/65-up',
+                'output_format': 'pdf',
+                'destination': 'office-printer-1',
+                'payload': {
+                    'labels': labels,
+                    'pdf_sheet_preset': 'a4-38x21.2',
+                },
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert created.status_code == 201
+    preview = created.json()['gateway_metadata']['render_preview']
+    assert preview['label_count'] == 65
+    if 'pdf_base64' not in preview:
+        assert 'render_error' in preview
+        return
+    downloaded = client.get(
+        f"/api/v1/printing/jobs/{created.json()['id']}/preview.pdf",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.reader',
+    )
+    assert downloaded.status_code == 200
+    assert downloaded['Content-Type'] == 'application/pdf'
+    assert downloaded.content[:4] == b'%PDF'
+
+
+@pytest.mark.django_db(transaction=True)
+def test_pdf_sheet_batch_count_repeats_labels_per_row():
+    host, _ = _create_tenants()
+    client = Client()
+    template = client.post(
+        '/api/v1/printing/templates',
+        data=json.dumps(
+            {
+                'name': 'A4 Batch Rows',
+                'template_ref': 'a4/batch-rows',
+                'output_format': 'pdf',
+                'content': 'QR [[content]]',
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert template.status_code == 201
+
+    created = client.post(
+        '/api/v1/printing/jobs',
+        data=json.dumps(
+            {
+                'template_ref': 'a4/batch-rows',
+                'output_format': 'pdf',
+                'destination': 'office-printer-1',
+                'payload': {
+                    'labels': ['BATCH-001'],
+                    'pdf_sheet_preset': 'a4-38x21.2',
+                    'batch_count': 5,
+                },
+            }
+        ),
+        content_type='application/json',
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES='catalog.editor',
+    )
+    assert created.status_code == 201
+    preview = created.json()['gateway_metadata']['render_preview']
+    assert preview['batch_count'] == 5
+    assert preview['label_count'] == 5

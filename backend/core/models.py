@@ -712,6 +712,22 @@ class PrintGateway(models.Model):
         ]
 
 
+class PrintTemplate(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    template_ref = models.CharField(max_length=256, unique=True)
+    output_format = models.CharField(max_length=16, choices=PrintJob.Format.choices)
+    content = models.TextField(blank=True, default="")
+    sample_payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["-updated_at"], name="print_template_updated_idx"),
+        ]
+
+
 class CollaborationDocument(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=200)

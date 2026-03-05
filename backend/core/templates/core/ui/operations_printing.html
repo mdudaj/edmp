@@ -1,0 +1,333 @@
+{% extends base_template %}
+{% block title %}Printing Operations{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div>
+    <h1>Printing Operations</h1>
+    <p class="muted">Configure printers, define templates, and run test prints.</p>
+  </div>
+  <form method="get" class="right" aria-label="Printing filters">
+    <select class="select" name="job_status">
+      <option value="">All job statuses</option>
+      {% for option in job_status_options %}
+      <option value="{{ option }}" {% if job_status_filter == option %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+    <select class="select" name="gateway_status">
+      <option value="">All gateway statuses</option>
+      {% for option in gateway_status_options %}
+      <option value="{{ option }}" {% if gateway_status_filter == option %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+    <button class="button" type="submit">Apply</button>
+    <a class="button secondary" href="/ui/operations/printing">Clear</a>
+  </form>
+</div>
+{{ payload.templates|json_script:"printing-templates-data" }}
+
+<div class="cards">
+  <div class="card">
+    <h3>Jobs</h3>
+    {% for status, count in payload.cards.jobs.items %}
+      <div><span class="chip">{{ status }}</span><strong>{{ count }}</strong></div>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <h3>Gateways</h3>
+    {% for status, count in payload.cards.gateways.items %}
+      <div><span class="chip">{{ status }}</span><strong>{{ count }}</strong></div>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <h3>Templates</h3>
+    <div><span class="chip">count</span><strong>{{ payload.cards.templates }}</strong></div>
+  </div>
+</div>
+
+{% if payload.capabilities.can_manage_templates %}
+<div class="card" style="margin-top: 12px;">
+  <h3>Define print template</h3>
+  <div class="actions" data-ui-action-form="print-template-create">
+    <input class="input" data-field="name" placeholder="template name" aria-label="Template name">
+    <input class="input" data-field="template_ref" placeholder="template_ref" aria-label="Template ref">
+    <select class="select" data-field="output_format" aria-label="Template output format">
+      {% for option in job_format_options %}
+      <option value="{{ option }}">{{ option }}</option>
+      {% endfor %}
+    </select>
+    <input class="input" data-field="content" placeholder="template content" aria-label="Template content">
+    <input class="input" data-field="sample_payload" placeholder='sample payload JSON' aria-label="Sample payload JSON">
+    <button class="button secondary" data-ui-action="print-template-create" onclick="createPrintTemplate(this)">save</button>
+  </div>
+</div>
+{% endif %}
+
+{% if payload.capabilities.can_create_jobs %}
+<div class="card" style="margin-top: 12px;">
+  <h3>Run test print</h3>
+  <div class="actions" data-ui-action-form="print-job-test">
+    <select class="select" data-field="template_id" aria-label="Template">
+      <option value="">Select template</option>
+      {% for template in payload.templates %}
+      <option value="{{ template.id }}">{{ template.name }} ({{ template.template_ref }})</option>
+      {% endfor %}
+    </select>
+    <input class="input" data-field="destination" placeholder="destination" aria-label="Destination">
+    <input class="input" data-field="payload" placeholder='payload JSON (optional; defaults to template sample)' aria-label="Payload JSON">
+    <button class="button secondary" data-ui-action="print-job-test" onclick="createTestPrintJob(this)">test</button>
+  </div>
+</div>
+{% endif %}
+
+{% if payload.capabilities.can_manage_gateways %}
+<div class="card" style="margin-top: 12px;">
+  <h3>Configure printer</h3>
+  <div class="actions" data-ui-action-form="print-gateway-create">
+    <input class="input" data-field="gateway_ref" placeholder="printer_ref" aria-label="Printer ref">
+    <input class="input" data-field="display_name" placeholder="printer name" aria-label="Printer name">
+    <input class="input" data-field="site_ref" placeholder="site_ref (optional)" aria-label="Site ref">
+    <select class="select" data-field="status" aria-label="Gateway status">
+      {% for option in gateway_status_options %}
+      <option value="{{ option }}">{{ option }}</option>
+      {% endfor %}
+    </select>
+    <input class="input" data-field="capabilities" placeholder='capabilities JSON array (optional)' aria-label="Capabilities JSON">
+    <button class="button secondary" data-ui-action="print-gateway-create" onclick="createPrintGateway(this)">save</button>
+  </div>
+</div>
+{% endif %}
+
+<h3 style="margin-top: 16px;">Templates</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Ref</th>
+      <th>Format</th>
+      <th>Sample payload</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for template in payload.templates %}
+    <tr>
+      <td>{{ template.name }}</td>
+      <td>{{ template.template_ref }}</td>
+      <td><span class="chip">{{ template.output_format }}</span></td>
+      <td>{{ template.sample_payload }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4" class="muted">No print templates</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3 style="margin-top: 16px;">Jobs</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Template</th>
+      <th>Destination</th>
+      <th>Format</th>
+      <th>Status</th>
+      <th>Retries</th>
+      <th>Run action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for job in payload.jobs %}
+    <tr>
+      <td>{{ job.template_ref }}</td>
+      <td>{{ job.destination }}</td>
+      <td>{{ job.output_format }}</td>
+      <td><span class="chip">{{ job.status }}</span></td>
+      <td>{{ job.retry_count }}</td>
+      <td>
+        {% if job.allowed_actions %}
+        <div class="actions" data-ui-action-form="print-job">
+          <select class="select" data-field="status" aria-label="Print job status action">
+            {% for action in job.allowed_actions %}
+            <option value="{{ action }}">{{ action }}</option>
+            {% endfor %}
+          </select>
+          <input class="input" data-field="retry_count" placeholder="retry_count (optional)" aria-label="Retry count">
+          <input class="input" data-field="error_message" placeholder="error message (for failed)" aria-label="Error message">
+          <input class="input" data-field="gateway_metadata" placeholder='gateway metadata JSON' aria-label="Gateway metadata JSON">
+          <button
+            class="button secondary"
+            data-ui-action="print-job"
+            onclick="submitPrintJobAction(this, '{{ job.id }}')"
+          >
+            run
+          </button>
+        </div>
+        {% else %}
+        <span class="muted">No actions</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" class="muted">No print jobs</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3 style="margin-top: 16px;">Gateways</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Gateway</th>
+      <th>Ref</th>
+      <th>Status</th>
+      <th>Version</th>
+      <th>Last heartbeat</th>
+      <th>Run action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for gateway in payload.gateways %}
+    <tr>
+      <td>{{ gateway.display_name }}</td>
+      <td>{{ gateway.gateway_ref }}</td>
+      <td><span class="chip">{{ gateway.status }}</span></td>
+      <td>{{ gateway.last_seen_version|default_if_none:"" }}</td>
+      <td>{{ gateway.last_heartbeat_at|default_if_none:"" }}</td>
+      <td>
+        {% if payload.capabilities.can_manage_gateways %}
+        <div class="actions" data-ui-action-form="print-gateway">
+          <select class="select" data-field="status" aria-label="Gateway heartbeat status">
+            {% for option in gateway_status_options %}
+            <option value="{{ option }}" {% if gateway.status == option %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+          <input class="input" data-field="version" placeholder="version (optional)" aria-label="Gateway version">
+          <input class="input" data-field="capabilities" placeholder='capabilities JSON array' aria-label="Gateway capabilities JSON">
+          <input class="input" data-field="metadata" placeholder='metadata JSON object' aria-label="Gateway metadata JSON">
+          <button
+            class="button secondary"
+            data-ui-action="print-gateway"
+            onclick="submitPrintGatewayHeartbeat(this, '{{ gateway.id }}')"
+          >
+            heartbeat
+          </button>
+        </div>
+        {% else %}
+        <span class="muted">No actions</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" class="muted">No gateways</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+  function parseJsonOrError(raw, fallback, errorMessage) {
+    if (!raw.trim()) return fallback;
+    try {
+      return JSON.parse(raw);
+    } catch (_e) {
+      const current = new URL(window.location.href);
+      current.searchParams.set("ui_message", errorMessage);
+      current.searchParams.set("ui_error", "1");
+      window.location.assign(current.toString());
+      return null;
+    }
+  }
+  const printTemplates = JSON.parse(document.getElementById("printing-templates-data").textContent);
+
+  function setUiError(message) {
+    const current = new URL(window.location.href);
+    current.searchParams.set("ui_message", message);
+    current.searchParams.set("ui_error", "1");
+    window.location.assign(current.toString());
+  }
+
+  function submitPrintJobAction(button, jobId) {
+    const root = button.closest('[data-ui-action-form="print-job"]');
+    const payload = {status: root.querySelector('[data-field="status"]').value};
+    const retryRaw = root.querySelector('[data-field="retry_count"]').value.trim();
+    if (retryRaw) payload.retry_count = Number.parseInt(retryRaw, 10);
+    const errorMessage = root.querySelector('[data-field="error_message"]').value.trim();
+    if (errorMessage) payload.error_message = errorMessage;
+    const metadataRaw = root.querySelector('[data-field="gateway_metadata"]').value;
+    const parsedMetadata = parseJsonOrError(metadataRaw, undefined, "gateway_metadata must be valid JSON");
+    if (parsedMetadata === null) return;
+    if (parsedMetadata !== undefined) payload.gateway_metadata = parsedMetadata;
+    edmpUiAction(`/api/v1/printing/jobs/${jobId}/status`, payload);
+  }
+
+  function submitPrintGatewayHeartbeat(button, gatewayId) {
+    const root = button.closest('[data-ui-action-form="print-gateway"]');
+    const payload = {status: root.querySelector('[data-field="status"]').value};
+    const version = root.querySelector('[data-field="version"]').value.trim();
+    if (version) payload.version = version;
+    const capabilitiesRaw = root.querySelector('[data-field="capabilities"]').value;
+    const parsedCapabilities = parseJsonOrError(capabilitiesRaw, undefined, "capabilities must be valid JSON array");
+    if (parsedCapabilities === null) return;
+    if (parsedCapabilities !== undefined) payload.capabilities = parsedCapabilities;
+    const metadataRaw = root.querySelector('[data-field="metadata"]').value;
+    const parsedMetadata = parseJsonOrError(metadataRaw, undefined, "metadata must be valid JSON object");
+    if (parsedMetadata === null) return;
+    if (parsedMetadata !== undefined) payload.metadata = parsedMetadata;
+    edmpUiAction(`/api/v1/printing/gateways/${gatewayId}/heartbeat`, payload);
+  }
+
+  function createPrintTemplate(button) {
+    const root = button.closest('[data-ui-action-form="print-template-create"]');
+    const samplePayloadRaw = root.querySelector('[data-field="sample_payload"]').value;
+    const samplePayload = parseJsonOrError(samplePayloadRaw, {}, "sample_payload must be valid JSON object");
+    if (samplePayload === null) return;
+    edmpUiAction('/api/v1/printing/templates', {
+      name: root.querySelector('[data-field="name"]').value.trim(),
+      template_ref: root.querySelector('[data-field="template_ref"]').value.trim(),
+      output_format: root.querySelector('[data-field="output_format"]').value,
+      content: root.querySelector('[data-field="content"]').value.trim(),
+      sample_payload: samplePayload,
+    });
+  }
+
+  function createTestPrintJob(button) {
+    const root = button.closest('[data-ui-action-form="print-job-test"]');
+    const selectedTemplateId = root.querySelector('[data-field="template_id"]').value;
+    const template = printTemplates.find((item) => item.id === selectedTemplateId);
+    if (!template) {
+      setUiError("Select a template first");
+      return;
+    }
+    const destination = root.querySelector('[data-field="destination"]').value.trim();
+    if (!destination) {
+      setUiError("destination is required");
+      return;
+    }
+    const payloadRaw = root.querySelector('[data-field="payload"]').value;
+    const parsedPayload = parseJsonOrError(payloadRaw, template.sample_payload || {}, "payload must be valid JSON object");
+    if (parsedPayload === null) return;
+    edmpUiAction('/api/v1/printing/jobs', {
+      template_ref: template.template_ref,
+      destination: destination,
+      output_format: template.output_format,
+      payload: parsedPayload,
+    });
+  }
+
+  function createPrintGateway(button) {
+    const root = button.closest('[data-ui-action-form="print-gateway-create"]');
+    const capabilitiesRaw = root.querySelector('[data-field="capabilities"]').value;
+    const parsedCapabilities = parseJsonOrError(capabilitiesRaw, [], "capabilities must be valid JSON array");
+    if (parsedCapabilities === null) return;
+    if (!Array.isArray(parsedCapabilities)) {
+      setUiError("capabilities must be a JSON array");
+      return;
+    }
+    const payload = {
+      gateway_ref: root.querySelector('[data-field="gateway_ref"]').value.trim(),
+      display_name: root.querySelector('[data-field="display_name"]').value.trim(),
+      site_ref: root.querySelector('[data-field="site_ref"]').value.trim(),
+      status: root.querySelector('[data-field="status"]').value,
+      capabilities: parsedCapabilities,
+    };
+    edmpUiAction('/api/v1/printing/gateways', payload);
+  }
+</script>
+{% endblock %}

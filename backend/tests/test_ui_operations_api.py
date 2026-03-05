@@ -3,6 +3,7 @@ import uuid
 
 import pytest
 from django.test import Client
+from django.test.utils import override_settings
 from django_tenants.utils import schema_context
 
 from tenants.models import Domain, Tenant
@@ -178,3 +179,332 @@ def test_ui_operations_role_enforcement_when_enabled(monkeypatch):
         HTTP_X_USER_ROLES="catalog.reader",
     )
     assert allowed.status_code == 200
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ui_operations_html_pages_render():
+    host, _ = _create_tenants()
+    client = Client()
+
+    dashboard = client.get("/ui/operations/dashboard", HTTP_HOST=host)
+    stewardship = client.get("/ui/operations/stewardship", HTTP_HOST=host)
+    orchestration = client.get("/ui/operations/orchestration", HTTP_HOST=host)
+    printing = client.get("/ui/operations/printing", HTTP_HOST=host)
+    agent = client.get("/ui/operations/agent", HTTP_HOST=host)
+
+    assert dashboard.status_code == 200
+    assert stewardship.status_code == 200
+    assert orchestration.status_code == 200
+    assert printing.status_code == 200
+    assert agent.status_code == 200
+    assert b"Skip to content" in dashboard.content
+    assert b"Operations Dashboard" in dashboard.content
+    assert b"Stewardship Workbench" in stewardship.content
+    assert b"Printing Operations" in printing.content
+
+
+@pytest.mark.django_db(transaction=True)
+@override_settings(EDMP_UI_MATERIAL_ENABLED=True)
+def test_ui_operations_html_pages_fallback_when_material_base_missing():
+    host, _ = _create_tenants()
+    client = Client()
+    dashboard = client.get("/ui/operations/dashboard", HTTP_HOST=host)
+    assert dashboard.status_code == 200
+    assert b"EDMP Operations" in dashboard.content
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ui_operations_html_filters_apply():
+    host, _ = _create_tenants()
+    client = Client()
+
+    client.post(
+        "/api/v1/stewardship/items",
+        data=json.dumps(
+            {"item_type": "quality_exception", "subject_ref": "asset:critical", "severity": "critical"}
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+    )
+    client.post(
+        "/api/v1/stewardship/items",
+        data=json.dumps(
+            {"item_type": "quality_exception", "subject_ref": "asset:low", "severity": "low"}
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+    )
+
+    filtered = client.get(
+        "/ui/operations/stewardship?severity=critical",
+        HTTP_HOST=host,
+    )
+    assert filtered.status_code == 200
+    assert b"asset:critical" in filtered.content
+    assert b"asset:low" not in filtered.content
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ui_action_controls_visibility_by_role(monkeypatch):
+    monkeypatch.setenv("EDMP_ENFORCE_ROLES", "true")
+    host, _ = _create_tenants()
+    client = Client()
+
+    client.post(
+        "/api/v1/stewardship/items",
+        data=json.dumps(
+            {"item_type": "quality_exception", "subject_ref": "asset:role-check", "severity": "high"}
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="policy.admin",
+    )
+
+    admin_view = client.get(
+        "/ui/operations/stewardship",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="policy.admin",
+    )
+    reader_view = client.get(
+        "/ui/operations/stewardship",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="catalog.reader",
+    )
+
+    assert admin_view.status_code == 200
+    assert reader_view.status_code == 200
+    assert b'data-ui-action="stewardship"' in admin_view.content
+    assert b'data-ui-action="stewardship"' not in reader_view.content
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ui_feedback_banner_renders_from_query_params():
+    host, _ = _create_tenants()
+    client = Client()
+    page = client.get(
+        "/ui/operations/dashboard?ui_message=Action%20completed&ui_error=0",
+        HTTP_HOST=host,
+    )
+    assert page.status_code == 200
+    assert b"Action completed" in page.content
+    assert b"banner ok" in page.content
+
+
+@pytest.mark.django_db(transaction=True)
+def test_stewardship_action_form_fields_render_for_managers(monkeypatch):
+    monkeypatch.setenv("EDMP_ENFORCE_ROLES", "true")
+    host, _ = _create_tenants()
+    client = Client()
+    client.post(
+        "/api/v1/stewardship/items",
+        data=json.dumps(
+            {"item_type": "quality_exception", "subject_ref": "asset:form", "severity": "high"}
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="policy.admin",
+    )
+    page = client.get(
+        "/ui/operations/stewardship",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="policy.admin",
+    )
+    assert page.status_code == 200
+    assert b'data-ui-action-form="stewardship"' in page.content
+    assert b"assignee (for assign)" in page.content
+    assert b"resolution JSON (for resolve)" in page.content
+
+
+@pytest.mark.django_db(transaction=True)
+def test_orchestration_action_form_renders_for_admin():
+    host, _ = _create_tenants()
+    client = Client()
+    project = client.post(
+        "/api/v1/projects",
+        data=json.dumps({"name": "UI Action Project"}),
+        content_type="application/json",
+        HTTP_HOST=host,
+    )
+    ingestion = client.post(
+        "/api/v1/ingestions",
+        data=json.dumps(
+            {"project_id": project.json()["id"], "connector": "dbt", "source": {"processed_entities": 1}}
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+    )
+    workflow = client.post(
+        "/api/v1/orchestration/workflows",
+        data=json.dumps(
+            {"name": "ui-orch-actions", "project_id": project.json()["id"], "steps": [{"step_id": "s1", "ingestion_id": ingestion.json()["id"]}]}
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="policy.admin",
+    )
+    client.post(
+        "/api/v1/orchestration/runs",
+        data=json.dumps({"workflow_id": workflow.json()["id"]}),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="catalog.editor",
+    )
+    page = client.get(
+        "/ui/operations/orchestration",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="policy.admin",
+    )
+    assert page.status_code == 200
+    assert b'data-ui-action-form="orchestration"' in page.content
+
+
+@pytest.mark.django_db(transaction=True)
+def test_agent_action_form_renders_with_input_fields():
+    host, _ = _create_tenants()
+    client = Client()
+    client.post(
+        "/api/v1/agent/runs",
+        data=json.dumps({"prompt": "project:p monitor", "allowed_tools": ["quality.read"], "start_now": True}),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="catalog.editor",
+    )
+    page = client.get(
+        "/ui/operations/agent",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="catalog.editor",
+    )
+    assert page.status_code == 200
+    assert b'data-ui-action-form="agent"' in page.content
+    assert b"error message (for fail)" in page.content
+    assert b"output JSON (for complete)" in page.content
+
+
+@pytest.mark.django_db(transaction=True)
+def test_printing_page_renders_jobs_and_gateways():
+    host, _ = _create_tenants()
+    client = Client()
+    client.post(
+        "/api/v1/printing/templates",
+        data=json.dumps(
+            {
+                "name": "Shipping Label",
+                "template_ref": "label/shipping-ui",
+                "output_format": "pdf",
+                "sample_payload": {"order_id": "42"},
+            }
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="catalog.editor",
+    )
+    client.post(
+        "/api/v1/printing/jobs",
+        data=json.dumps(
+            {
+                "template_ref": "label/shipping-ui",
+                "destination": "printer-a",
+                "output_format": "pdf",
+                "payload": {"order_id": "42"},
+            }
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="catalog.editor",
+    )
+    client.post(
+        "/api/v1/printing/gateways",
+        data=json.dumps(
+            {
+                "gateway_ref": "gw-ui-test",
+                "display_name": "Gateway UI Test",
+                "status": "online",
+            }
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="policy.admin",
+    )
+    page = client.get(
+        "/ui/operations/printing",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="policy.admin,catalog.editor",
+    )
+    assert page.status_code == 200
+    assert b"Shipping Label" in page.content
+    assert b"Run test print" in page.content
+    assert b"Define print template" in page.content
+    assert b"Gateway UI Test" in page.content
+    assert b'data-ui-action-form="print-job"' in page.content
+    assert b'data-ui-action-form="print-gateway"' in page.content
+
+
+@pytest.mark.django_db(transaction=True)
+def test_user_portal_dashboard_renders_test_print_action():
+    host, _ = _create_tenants()
+    client = Client()
+    client.post(
+        "/api/v1/printing/templates",
+        data=json.dumps(
+            {
+                "name": "Portal Label",
+                "template_ref": "label/portal",
+                "output_format": "pdf",
+                "sample_payload": {"sample": True},
+            }
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="catalog.editor",
+    )
+    client.post(
+        "/api/v1/printing/gateways",
+        data=json.dumps(
+            {
+                "gateway_ref": "printer-portal-1",
+                "display_name": "Portal Printer",
+                "status": "online",
+            }
+        ),
+        content_type="application/json",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="tenant.admin",
+    )
+    page = client.get(
+        "/app",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="catalog.editor",
+        HTTP_X_USER_ID="user-portal-1",
+    )
+    assert page.status_code == 200
+    assert b"User Workspace" in page.content
+    assert b"Test print" in page.content
+    assert b'data-user-action="test-print"' in page.content
+    assert b'data-user-action="create-template"' in page.content
+    assert b'data-user-action="create-printer"' in page.content
+    assert b'data-user-action="template-preview"' in page.content
+    assert b'data-user-action="printer-status-update"' in page.content
+    assert b"participant prefix" in page.content
+    assert b"range start" in page.content
+    assert b"range end" in page.content
+    assert b"Serial position" in page.content
+    assert b"label variants" in page.content
+    assert b"PDF sheet preset" in page.content
+    assert b"labels (optional, one per line)" in page.content
+    assert b"Signed in as:" in page.content
+    assert b"user-portal-1" in page.content
+    assert b"catalog.editor" in page.content
+
+
+@pytest.mark.django_db(transaction=True)
+def test_user_portal_dashboard_includes_default_print_templates():
+    host, _ = _create_tenants()
+    client = Client()
+    page = client.get(
+        "/app",
+        HTTP_HOST=host,
+        HTTP_X_USER_ROLES="catalog.editor",
+    )
+    assert page.status_code == 200
+    assert b"Zebra QR Label (9-pack ready)" in page.content
+    assert b"A4 QR Sheet 65-up (38.1x21.2mm)" in page.content

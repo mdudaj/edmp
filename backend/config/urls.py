@@ -81,8 +81,10 @@ from core.views import (
     orchestration_runs,
     orchestration_workflows,
     print_job_detail,
+    print_job_preview_pdf,
     print_gateway_heartbeat,
     print_gateways,
+    print_templates,
     print_job_status,
     print_jobs,
     project_member_lifecycle,
@@ -127,11 +129,17 @@ from core.views import (
     workflow_run_transition,
     workflow_runs,
     ui_operations_agent_monitor,
+    ui_operations_agent_page,
     ui_operations_dashboard,
+    ui_operations_dashboard_page,
     ui_operations_orchestration_monitor,
+    ui_operations_orchestration_page,
+    ui_operations_printing_page,
     ui_operations_stewardship_workbench,
+    ui_operations_stewardship_page,
+    user_portal_dashboard_page,
 )
-from tenants.views import tenants
+from tenants.views import tenant_services, tenants
 
 urlpatterns = [
     path('', health, name='health'),
@@ -140,6 +148,7 @@ urlpatterns = [
     path('readyz', readyz, name='readyz'),
     path('metrics', metrics, name='metrics'),
     path('api/v1/tenants', tenants, name='tenants'),
+    path('api/v1/tenants/services', tenant_services, name='tenant_services'),
     path('api/v1/governance/policies', governance_policies, name='governance_policies'),
     path(
         'api/v1/governance/policies/<uuid:policy_id>',
@@ -220,8 +229,10 @@ urlpatterns = [
     path('api/v1/connectors/runs/<uuid:run_id>/cancel', connector_run_cancel, name='connector_run_cancel'),
     path('api/v1/printing/jobs', print_jobs, name='print_jobs'),
     path('api/v1/printing/jobs/<uuid:job_id>', print_job_detail, name='print_job_detail'),
+    path('api/v1/printing/jobs/<uuid:job_id>/preview.pdf', print_job_preview_pdf, name='print_job_preview_pdf'),
     path('api/v1/printing/jobs/<uuid:job_id>/status', print_job_status, name='print_job_status'),
     path('api/v1/printing/gateways', print_gateways, name='print_gateways'),
+    path('api/v1/printing/templates', print_templates, name='print_templates'),
     path(
         'api/v1/printing/gateways/<uuid:gateway_id>/heartbeat',
         print_gateway_heartbeat,
@@ -402,6 +413,20 @@ urlpatterns = [
         ui_operations_agent_monitor,
         name='ui_operations_agent_monitor',
     ),
+    path('ui/operations/dashboard', ui_operations_dashboard_page, name='ui_operations_dashboard_page'),
+    path(
+        'ui/operations/stewardship',
+        ui_operations_stewardship_page,
+        name='ui_operations_stewardship_page',
+    ),
+    path(
+        'ui/operations/orchestration',
+        ui_operations_orchestration_page,
+        name='ui_operations_orchestration_page',
+    ),
+    path('ui/operations/printing', ui_operations_printing_page, name='ui_operations_printing_page'),
+    path('ui/operations/agent', ui_operations_agent_page, name='ui_operations_agent_page'),
+    path('app', user_portal_dashboard_page, name='user_portal_dashboard_page'),
     path('api/v1/lineage/edges', lineage_edges, name='lineage_edges'),
     path('admin/', admin.site.urls),
 ]
