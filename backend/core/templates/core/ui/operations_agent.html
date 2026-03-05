@@ -1,0 +1,60 @@
+{% extends base_template %}
+{% block title %}Agent Monitor{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div>
+    <h1>Agent Monitor</h1>
+    <p class="muted">Recent agent runs and statuses.</p>
+  </div>
+  <form method="get" class="right" aria-label="Project filter">
+    <input class="input" type="text" name="project_id" placeholder="Project ID" value="{{ project_id }}">
+    <button class="button" type="submit">Filter</button>
+    <a class="button secondary" href="/ui/operations/agent">Clear</a>
+  </form>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>Prompt</th>
+      <th>Status</th>
+      <th>Timeout (s)</th>
+      <th>Updated</th>
+      <th>Run action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for run in payload.runs %}
+    <tr>
+      <td>{{ run.prompt|truncatechars:80 }}</td>
+      <td><span class="chip">{{ run.status }}</span></td>
+      <td>{{ run.timeout_seconds }}</td>
+      <td>{{ run.updated_at }}</td>
+      <td>
+        {% if run.allowed_actions %}
+        <div class="actions" data-ui-action-form="agent">
+          <select class="select" data-field="action" aria-label="Agent action">
+            {% for action in run.allowed_actions %}
+            <option value="{{ action }}">{{ action }}</option>
+            {% endfor %}
+          </select>
+          <input class="input" data-field="error_message" placeholder="error message (for fail)" aria-label="Error message">
+          <input class="input" data-field="output" placeholder='output JSON (for complete)' aria-label="Output JSON">
+          <button
+            class="button secondary"
+            data-ui-action="agent"
+            onclick="submitAgentAction(this, '{{ run.id }}')"
+          >
+            run
+          </button>
+        </div>
+        {% else %}
+        <span class="muted">No actions</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" class="muted">No agent runs</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
+import importlib.util
 import os
 from pathlib import Path
 
@@ -44,6 +45,18 @@ SHARED_APPS = [
     'django.contrib.staticfiles',
     'tenants',
 ]
+
+EDMP_UI_MATERIAL_ENABLED = os.environ.get('EDMP_UI_MATERIAL_ENABLED', '').lower() in {
+    '1',
+    'true',
+    'yes',
+}
+if EDMP_UI_MATERIAL_ENABLED:
+    if importlib.util.find_spec('material') is None:
+        raise RuntimeError(
+            'EDMP_UI_MATERIAL_ENABLED is true but django-material is not installed'
+        )
+    SHARED_APPS.append('material')
 
 TENANT_APPS = [
     'core',

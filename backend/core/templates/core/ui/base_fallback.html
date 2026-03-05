@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}EDMP Operations{% endblock %}</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f6f8fb; color: #111827; }
+      .skip-link { position: absolute; left: -9999px; top: 0; z-index: 1000; background: #2563eb; color: #fff; padding: 8px 12px; border-radius: 8px; }
+      .skip-link:focus { left: 16px; top: 12px; }
+      .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+      .sidebar { background: #111827; color: #e5e7eb; padding: 20px 16px; }
+      .brand { font-weight: 700; margin-bottom: 20px; }
+      .nav a { display: block; color: #cbd5e1; text-decoration: none; padding: 10px 12px; border-radius: 10px; margin-bottom: 6px; }
+      .nav a.active, .nav a:hover { background: #1f2937; color: #fff; }
+      .content { padding: 24px; }
+      .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+      .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.06); padding: 14px; }
+      .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+      .toolbar .right { display: flex; flex-wrap: wrap; gap: 8px; }
+      .input, .select { border: 1px solid #d1d5db; background: #fff; border-radius: 10px; padding: 8px 10px; font-size: 14px; }
+      .button { border: 1px solid #2563eb; color: #fff; background: #2563eb; border-radius: 10px; padding: 8px 12px; text-decoration: none; font-size: 14px; display: inline-block; }
+      .button.secondary { background: #fff; color: #2563eb; }
+      .chip { display: inline-block; border-radius: 999px; background: #e5e7eb; color: #374151; padding: 2px 8px; font-size: 12px; margin-right: 4px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+      .banner { border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 14px; }
+      .banner.ok { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+      .banner.err { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+      .muted { color: #6b7280; }
+      table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; }
+      th, td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: left; font-size: 14px; }
+      th { background: #f9fafb; font-weight: 600; }
+      a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+      @media (max-width: 920px) {
+        .layout { grid-template-columns: 1fr; }
+        .sidebar { padding: 12px; }
+        .nav { display: flex; flex-wrap: wrap; gap: 8px; }
+        .nav a { margin-bottom: 0; }
+        .toolbar { flex-direction: column; align-items: stretch; }
+      }
+    </style>
+  </head>
+  <body>
+    <a href="#main-content" class="skip-link">Skip to content</a>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">EDMP Operations</div>
+        <nav class="nav" aria-label="Operations navigation">
+          <a href="/ui/operations/dashboard" class="{% if active_nav == 'dashboard' %}active{% endif %}">Dashboard</a>
+          <a href="/ui/operations/stewardship" class="{% if active_nav == 'stewardship' %}active{% endif %}">Stewardship</a>
+          <a href="/ui/operations/orchestration" class="{% if active_nav == 'orchestration' %}active{% endif %}">Orchestration</a>
+          <a href="/ui/operations/printing" class="{% if active_nav == 'printing' %}active{% endif %}">Printing</a>
+          <a href="/ui/operations/agent" class="{% if active_nav == 'agent' %}active{% endif %}">Agent runs</a>
+        </nav>
+      </aside>
+      <main class="content" id="main-content">
+        {% if ui_message %}
+          <div class="banner {% if ui_error %}err{% else %}ok{% endif %}">{{ ui_message }}</div>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+    <script>
+      async function edmpUiAction(url, payload) {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          let message = "Action failed";
+          try {
+            const data = await response.json();
+            message = data.error || message;
+          } catch (_e) {}
+          const current = new URL(window.location.href);
+          current.searchParams.set("ui_message", message);
+          current.searchParams.set("ui_error", "1");
+          window.location.assign(current.toString());
+          return;
+        }
+        const current = new URL(window.location.href);
+        current.searchParams.set("ui_message", "Action completed");
+        current.searchParams.set("ui_error", "0");
+        window.location.assign(current.toString());
+      }
+
+      function submitStewardshipAction(button, itemId) {
+        const root = button.closest('[data-ui-action-form="stewardship"]');
+        const action = root.querySelector('[data-field="action"]').value;
+        const assignee = root.querySelector('[data-field="assignee"]').value.trim();
+        const resolutionRaw = root.querySelector('[data-field="resolution"]').value.trim();
+        const payload = {action};
+        if (assignee) payload.assignee = assignee;
+        if (resolutionRaw) {
+          try {
+            payload.resolution = JSON.parse(resolutionRaw);
+          } catch (_e) {
+            const current = new URL(window.location.href);
+            current.searchParams.set("ui_message", "resolution must be valid JSON");
+            current.searchParams.set("ui_error", "1");
+            window.location.assign(current.toString());
+            return;
+          }
+        }
+        edmpUiAction(`/api/v1/stewardship/items/${itemId}/transition`, payload);
+      }
+
+      function submitOrchestrationAction(button, runId) {
+        const root = button.closest('[data-ui-action-form="orchestration"]');
+        const action = root.querySelector('[data-field="action"]').value;
+        edmpUiAction(`/api/v1/orchestration/runs/${runId}/transition`, {action});
+      }
+
+      function submitAgentAction(button, runId) {
+        const root = button.closest('[data-ui-action-form="agent"]');
+        const action = root.querySelector('[data-field="action"]').value;
+        const outputRaw = root.querySelector('[data-field="output"]').value.trim();
+        const errorMessage = root.querySelector('[data-field="error_message"]').value.trim();
+        const payload = {action};
+        if (action === "complete" && outputRaw) {
+          try {
+            payload.output = JSON.parse(outputRaw);
+          } catch (_e) {
+            const current = new URL(window.location.href);
+            current.searchParams.set("ui_message", "output must be valid JSON");
+            current.searchParams.set("ui_error", "1");
+            window.location.assign(current.toString());
+            return;
+          }
+        }
+        if (action === "fail" && errorMessage) {
+          payload.error_message = errorMessage;
+        }
+        edmpUiAction(`/api/v1/agent/runs/${runId}/transition`, payload);
+      }
+    </script>
+  </body>
+</html>

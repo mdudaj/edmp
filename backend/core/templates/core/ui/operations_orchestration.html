@@ -1,0 +1,51 @@
+{% extends base_template %}
+{% block title %}Orchestration Monitor{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div>
+    <h1>Orchestration Monitor</h1>
+    <p class="muted">Workflow catalog and run history.</p>
+  </div>
+  <form method="get" class="right" aria-label="Project filter">
+    <input class="input" type="text" name="project_id" placeholder="Project ID" value="{{ project_id }}">
+    <button class="button" type="submit">Filter</button>
+    <a class="button secondary" href="/ui/operations/orchestration">Clear</a>
+  </form>
+</div>
+<div class="cards">
+  <div class="card">
+    <h3>Workflows ({{ payload.workflows|length }})</h3>
+    {% for item in payload.workflows %}
+      <div>{{ item.name }} <span class="chip">{{ item.status }}</span></div>
+    {% empty %}
+      <div class="muted">No workflows</div>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <h3>Runs ({{ payload.runs|length }})</h3>
+    {% for item in payload.runs %}
+      <div>
+        {{ item.id }} <span class="chip">{{ item.status }}</span>
+        {% if item.allowed_actions %}
+        <div class="actions" data-ui-action-form="orchestration">
+          <select class="select" data-field="action" aria-label="Orchestration action">
+            {% for action in item.allowed_actions %}
+            <option value="{{ action }}">{{ action }}</option>
+            {% endfor %}
+          </select>
+          <button
+            class="button secondary"
+            data-ui-action="orchestration"
+            onclick="submitOrchestrationAction(this, '{{ item.id }}')"
+          >
+            run
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    {% empty %}
+      <div class="muted">No runs</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

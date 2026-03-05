@@ -76,11 +76,18 @@ This repository is an intentionally small scaffold. This roadmap lists the next 
 
 ## Near-term (next)
 
-No additional near-term items are currently queued in this scaffold.
+1. **End-user workspace UI baseline**: add tenant-facing pages for print setup, template catalog, and test-print submission with clear non-operator UX flows.
+2. **Wildcard tenant domain routing**: support base platform domain + service-aware tenant subdomains (`<service>.<tenant>.<base-domain>`) in tenant resolution and host validation.
+3. **Tenant service-entry registry**: define how requested services map to tenant subdomains and route users to the right workspace entrypoint.
+4. **End-user auth/session UX**: deliver login, tenant switch, and permission-aware navigation patterns for non-operations users.
+5. **Portal acceptance and regression coverage**: add tests for tenant isolation, role visibility, and wildcard-host routing behavior.
 
 ## Mid-term
 
-No additional mid-term items are currently queued in this scaffold.
+1. **Self-service onboarding flow**: tenant admin onboarding for service activation, domain assignment visibility, and first-use checklist.
+2. **Service-specific workspace shells**: shared design system with service modules (printing, governance, collaboration, etc.) under tenant subdomains.
+3. **Tenant LAB LIMS system specification**: define detailed product/API/domain model for `[tenant].[lab].edmp.co.tz` (see `docs/lab-lims.md`).
+4. **Tenant EDCS system specification**: define detailed product/API/domain model for `[tenant].[edcs].edmp.co.tz` (see `docs/edcs.md`).
 
 ## Out of scope for this scaffold (yet)
 

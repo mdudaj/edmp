@@ -53,6 +53,8 @@ This repository contains an initial scaffold for a Kubernetes-native, multi-tena
 * [Operational runbooks and incident playbooks](docs/operations-runbooks.md)
 * [Operational dashboards and alert rules](docs/operations-dashboards-alerts.md)
 * [Kubernetes deployment notes](docs/kubernetes.md)
+* [Research LAB LIMS placeholder spec](docs/lab-lims.md)
+* [EDCS placeholder spec](docs/edcs.md)
 * [OpenAPI (HTTP surface)](docs/openapi.yaml)
 * [Eventing conventions](docs/events.md)
 
@@ -104,4 +106,45 @@ Note: Django creates a separate test database (e.g. `test_edmp_test`) during `py
 
 # broader local gate (docs checks + non-perf backend suite)
 .github/scripts/local_fast_feedback.sh --full-gate
+```
+
+### Local operations UI preview (django-material optional)
+
+```bash
+# one command local preview (services + migrations + tenant + runserver)
+./scripts/local_preview.sh up
+```
+
+HTML routes:
+* `/app` (end-user workspace)
+* `/ui/operations/dashboard`
+* `/ui/operations/stewardship`
+* `/ui/operations/orchestration`
+* `/ui/operations/printing`
+* `/ui/operations/agent`
+
+Printing UI supports:
+* printer (gateway) configuration
+* print template definition
+* template presets + inline preview for end users
+* test print submission from selected template
+* Zebra default batch mode: 9 labels per participant via prefix + range inputs
+* end-user workspace at `/app` for template/printer setup and test print
+* tenant service-route registry API: `GET/POST /api/v1/tenants/services` for wildcard hosts like `<service>.<tenant>.<base-domain>`
+* PDF preview download: `GET /api/v1/printing/jobs/<job_id>/preview.pdf`
+
+Useful subcommands:
+
+```bash
+./scripts/local_preview.sh prep    # dependencies + migrations + localhost tenant
+./scripts/local_preview.sh serve   # run Django server only
+./scripts/local_preview.sh status  # docker compose service status
+./scripts/local_preview.sh down    # stop local services
+```
+
+Optional:
+
+```bash
+EDMP_UI_MATERIAL_ENABLED=true ./scripts/local_preview.sh up
+EDMP_PREVIEW_PORT=8001 ./scripts/local_preview.sh up
 ```

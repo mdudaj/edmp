@@ -1,0 +1,338 @@
+{% extends "core/ui/user_base.html" %}
+{% block title %}User Workspace{% endblock %}
+{% block content %}
+<h1>User Workspace</h1>
+<p class="muted">Use templates and configured printers to submit a test print.</p>
+
+<div class="cards">
+  <div class="card"><span class="chip">Templates</span> <strong>{{ payload.cards.templates }}</strong></div>
+  <div class="card"><span class="chip">Printers</span> <strong>{{ payload.cards.printers }}</strong></div>
+  <div class="card"><span class="chip">Recent jobs</span> <strong>{{ payload.cards.recent_jobs }}</strong></div>
+</div>
+
+<div class="card">
+  <h3>Test print</h3>
+  {% if payload.capabilities.can_submit_print_jobs %}
+  {{ payload.templates|json_script:"user-print-templates-data" }}
+  <div class="form-rows" data-user-action-form="test-print">
+    <div class="form-row"><select class="select" data-field="template_id" aria-label="Template">
+      <option value="">Select template</option>
+      {% for template in payload.templates %}
+      <option value="{{ template.id }}">{{ template.name }} ({{ template.output_format }})</option>
+      {% endfor %}
+    </select></div>
+    <div class="form-row"><select class="select" data-field="destination" aria-label="Printer destination">
+      <option value="">Select printer</option>
+      {% for gateway in payload.gateways %}
+      <option value="{{ gateway.gateway_ref }}">{{ gateway.display_name }} ({{ gateway.gateway_ref }})</option>
+      {% endfor %}
+    </select></div>
+    <div class="form-row"><input class="input" data-field="participant_prefix" placeholder="participant prefix (e.g. MLTP2-MBY-KWJ-)" aria-label="Participant prefix"></div>
+    <div class="form-row"><input class="input" data-field="range_start" placeholder="range start (e.g. 001)" aria-label="Range start"></div>
+    <div class="form-row"><input class="input" data-field="range_end" placeholder="range end (e.g. 100)" aria-label="Range end"></div>
+    <div class="form-row"><select class="select" data-field="serial_position" aria-label="Serial position">
+      <option value="after_prefix">Serial after prefix (default)</option>
+      <option value="at_end">Serial at end</option>
+    </select></div>
+    <div class="form-row"><input class="input" data-field="label_suffixes" placeholder="label variants (comma-separated, use base for root)" aria-label="Label variants"></div>
+    <div class="form-row"><select class="select" data-field="pdf_sheet_preset" aria-label="PDF sheet preset">
+      <option value="a4-38x21.2">A4 38x21.2mm labels</option>
+    </select></div>
+    <div class="form-row"><input class="input" data-field="batch_count" placeholder="PDF row batch count (e.g. 5)" aria-label="PDF row batch count"></div>
+    <div class="form-row"><textarea class="input" data-field="labels_input" placeholder="labels (optional, one per line)" aria-label="Labels list" style="min-height:96px;"></textarea></div>
+    <div class="form-row"><input class="input" data-field="payload" placeholder='payload JSON (optional)' aria-label="Payload JSON"></div>
+    <div class="form-row"><button class="button" data-user-action="test-print" onclick="submitUserTestPrint(this)">Print</button></div>
+  </div>
+  <div class="muted" style="margin-top:6px;">Default batch: 9 Zebra labels per participant. For A4 PDF, set row batch count (e.g. 5) to repeat each label across a full row.</div>
+  {% else %}
+  <div class="muted">No print permissions for this account.</div>
+  {% endif %}
+</div>
+
+{% if payload.capabilities.can_manage_templates %}
+<div class="card" style="margin-top: 12px;">
+  <h3>Template designer</h3>
+  <div class="form-rows" data-user-action-form="create-template">
+    <div class="form-row"><select class="select" data-field="preset" aria-label="Template preset">
+      <option value="">Preset (optional)</option>
+      <option value="zebra-qr">Zebra QR label</option>
+      <option value="a4-qr-38x21-2">A4 QR sheet 38x21.2mm</option>
+    </select></div>
+    <div class="form-row"><input class="input" data-field="name" placeholder="Template name" aria-label="Template name"></div>
+    <div class="form-row"><input class="input" data-field="template_ref" placeholder="template_ref" aria-label="Template ref"></div>
+    <div class="form-row"><select class="select" data-field="output_format" aria-label="Template format">
+      <option value="pdf">pdf</option>
+      <option value="zpl">zpl</option>
+    </select></div>
+    <div class="form-row"><input class="input" data-field="content" placeholder="Template content (supports [[variable]])" aria-label="Template content"></div>
+    <div class="form-row"><input class="input" data-field="sample_payload" placeholder='sample payload JSON (optional)' aria-label="Sample payload JSON"></div>
+    <div class="form-row"><button class="button" data-user-action="template-preview" onclick="previewUserTemplate(this)">Preview</button></div>
+    <div class="form-row"><button class="button" data-user-action="create-template" onclick="createUserTemplate(this)">Create</button></div>
+  </div>
+  <pre class="muted" data-field="preview-output" style="margin-top:8px;white-space:pre-wrap"></pre>
+</div>
+{% endif %}
+
+{% if payload.capabilities.can_manage_printers %}
+<div class="card" style="margin-top: 12px;">
+  <h3>Printer profiles</h3>
+  <div class="form-rows" data-user-action-form="create-printer">
+    <div class="form-row"><input class="input" data-field="display_name" placeholder="Printer name" aria-label="Printer name"></div>
+    <div class="form-row"><input class="input" data-field="gateway_ref" placeholder="printer_ref" aria-label="Printer ref"></div>
+    <div class="form-row"><input class="input" data-field="site_ref" placeholder="Site (optional)" aria-label="Site"></div>
+    <div class="form-row"><select class="select" data-field="status" aria-label="Printer status">
+      <option value="online">online</option>
+      <option value="offline">offline</option>
+      <option value="degraded">degraded</option>
+    </select></div>
+    <div class="form-row"><button class="button" data-user-action="create-printer" onclick="createUserPrinter(this)">Add</button></div>
+  </div>
+  <table style="margin-top: 10px;">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Ref</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for gateway in payload.gateways %}
+      <tr>
+        <td>{{ gateway.display_name }}</td>
+        <td>{{ gateway.gateway_ref }}</td>
+        <td><span class="chip">{{ gateway.status }}</span></td>
+        <td>
+          <div class="form-rows" data-user-action-form="update-printer-status">
+            <div class="form-row"><select class="select" data-field="status" aria-label="Printer status action">
+              <option value="online" {% if gateway.status == 'online' %}selected{% endif %}>online</option>
+              <option value="offline" {% if gateway.status == 'offline' %}selected{% endif %}>offline</option>
+              <option value="degraded" {% if gateway.status == 'degraded' %}selected{% endif %}>degraded</option>
+            </select></div>
+            <div class="form-row"><button class="button" data-user-action="printer-status-update" onclick="updateUserPrinterStatus(this, '{{ gateway.id }}')">Save</button></div>
+          </div>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4" class="muted">No printers configured</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<h3 style="margin-top: 16px;">Recent print jobs</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Template</th>
+      <th>Destination</th>
+      <th>Status</th>
+      <th>Updated</th>
+      <th>Preview</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in payload.recent_jobs %}
+    <tr>
+      <td>{{ item.template_ref }}</td>
+      <td>{{ item.destination }}</td>
+      <td><span class="chip">{{ item.status }}</span></td>
+      <td>{{ item.updated_at }}</td>
+      <td>
+        {% if item.output_format == "pdf" %}
+        <a href="/api/v1/printing/jobs/{{ item.id }}/preview.pdf">Download PDF</a>
+        {% else %}
+        <span class="muted">n/a</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" class="muted">No print jobs yet</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+  function userUiError(message) {
+    const current = new URL(window.location.href);
+    current.searchParams.set("ui_message", message);
+    current.searchParams.set("ui_error", "1");
+    window.location.assign(current.toString());
+  }
+
+  function parseUserJson(raw, fallback, fieldName) {
+    if (!raw.trim()) return fallback;
+    try {
+      return JSON.parse(raw);
+    } catch (_e) {
+      userUiError(`${fieldName} must be valid JSON`);
+      return null;
+    }
+  }
+
+  function applySelectedPrintTemplate(select) {
+    const templates = JSON.parse(document.getElementById("user-print-templates-data").textContent);
+    const root = select.closest('[data-user-action-form="test-print"]');
+    const selected = templates.find((item) => item.id === select.value);
+    if (!selected) return;
+    const sample = selected.sample_payload || {};
+    root.querySelector('[data-field="payload"]').value = JSON.stringify(sample);
+    root.querySelector('[data-field="participant_prefix"]').value = sample.participant_prefix || "";
+    root.querySelector('[data-field="range_start"]').value = sample.range_start || "";
+    root.querySelector('[data-field="range_end"]').value = sample.range_end || "";
+    root.querySelector('[data-field="serial_position"]').value = sample.serial_position || "after_prefix";
+    root.querySelector('[data-field="label_suffixes"]').value = Array.isArray(sample.label_suffixes)
+      ? sample.label_suffixes.join(",")
+      : "";
+    root.querySelector('[data-field="pdf_sheet_preset"]').value = sample.pdf_sheet_preset || "a4-38x21.2";
+    root.querySelector('[data-field="batch_count"]').value = sample.batch_count || "";
+    root.querySelector('[data-field="labels_input"]').value = Array.isArray(sample.labels)
+      ? sample.labels.join("\n")
+      : "";
+  }
+
+  function submitUserTestPrint(button) {
+    const templates = JSON.parse(document.getElementById("user-print-templates-data").textContent);
+    const root = button.closest('[data-user-action-form="test-print"]');
+    const templateId = root.querySelector('[data-field="template_id"]').value;
+    const destination = root.querySelector('[data-field="destination"]').value.trim();
+    const participantPrefix = root.querySelector('[data-field="participant_prefix"]').value.trim();
+    const rangeStartRaw = root.querySelector('[data-field="range_start"]').value.trim();
+    const rangeEndRaw = root.querySelector('[data-field="range_end"]').value.trim();
+    const serialPosition = root.querySelector('[data-field="serial_position"]').value;
+    const suffixesRaw = root.querySelector('[data-field="label_suffixes"]').value.trim();
+    const pdfSheetPreset = root.querySelector('[data-field="pdf_sheet_preset"]').value;
+    const batchCountRaw = root.querySelector('[data-field="batch_count"]').value.trim();
+    const labelsInputRaw = root.querySelector('[data-field="labels_input"]').value.trim();
+    const payloadRaw = root.querySelector('[data-field="payload"]').value.trim();
+    const selected = templates.find((item) => item.id === templateId);
+    if (!selected || !destination) {
+      userUiError("template and destination are required");
+      return;
+    }
+    let payload = selected.sample_payload || {};
+    if (payloadRaw) {
+      try {
+        payload = JSON.parse(payloadRaw);
+      } catch (_e) {
+        userUiError("payload must be valid JSON");
+        return;
+      }
+    }
+    if (selected.output_format === "zpl" && participantPrefix && rangeStartRaw && rangeEndRaw) {
+      const rangeStart = Number.parseInt(rangeStartRaw, 10);
+      const rangeEnd = Number.parseInt(rangeEndRaw, 10);
+      if (Number.isNaN(rangeStart) || Number.isNaN(rangeEnd) || rangeStart <= 0 || rangeEnd < rangeStart) {
+        userUiError("invalid participant range");
+        return;
+      }
+      payload = {
+        ...payload,
+        participant_prefix: participantPrefix,
+        range_start: rangeStart,
+        range_end: rangeEnd,
+        serial_position: serialPosition,
+      };
+      if (suffixesRaw) {
+        payload.label_suffixes = suffixesRaw.split(',').map((item) => item.trim()).filter(Boolean);
+      }
+    }
+    if (labelsInputRaw) {
+      payload.labels = labelsInputRaw.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+    }
+    if (selected.output_format === "pdf") {
+      payload.pdf_sheet_preset = pdfSheetPreset;
+      if (batchCountRaw) {
+        const batchCount = Number.parseInt(batchCountRaw, 10);
+        if (Number.isNaN(batchCount) || batchCount <= 0) {
+          userUiError("pdf row batch count must be a positive integer");
+          return;
+        }
+        payload.batch_count = batchCount;
+      }
+    }
+    edmpPortalAction("/api/v1/printing/jobs", {
+      template_ref: selected.template_ref,
+      output_format: selected.output_format,
+      destination: destination,
+      payload: payload,
+    });
+  }
+
+  function createUserTemplate(button) {
+    const root = button.closest('[data-user-action-form="create-template"]');
+    const samplePayloadRaw = root.querySelector('[data-field="sample_payload"]').value;
+    const samplePayload = parseUserJson(samplePayloadRaw, {}, "sample_payload");
+    if (samplePayload === null) return;
+    edmpPortalAction("/api/v1/printing/templates", {
+      name: root.querySelector('[data-field="name"]').value.trim(),
+      template_ref: root.querySelector('[data-field="template_ref"]').value.trim(),
+      output_format: root.querySelector('[data-field="output_format"]').value,
+      content: root.querySelector('[data-field="content"]').value.trim(),
+      sample_payload: samplePayload,
+    });
+  }
+
+  function previewUserTemplate(button) {
+    const root = button.closest('[data-user-action-form="create-template"]');
+    const content = root.querySelector('[data-field="content"]').value || "";
+    const samplePayloadRaw = root.querySelector('[data-field="sample_payload"]').value;
+    const samplePayload = parseUserJson(samplePayloadRaw, {}, "sample_payload");
+    if (samplePayload === null) return;
+    const preview = content.replace(/\[\[\s*([a-zA-Z0-9_]+)\s*\]\]/g, (_m, key) => {
+      const value = samplePayload[key];
+      return value === undefined || value === null ? "" : String(value);
+    });
+    root.parentElement.querySelector('[data-field="preview-output"]').textContent = preview || "(empty preview)";
+  }
+
+  function createUserPrinter(button) {
+    const root = button.closest('[data-user-action-form="create-printer"]');
+    edmpPortalAction("/api/v1/printing/gateways", {
+      display_name: root.querySelector('[data-field="display_name"]').value.trim(),
+      gateway_ref: root.querySelector('[data-field="gateway_ref"]').value.trim(),
+      site_ref: root.querySelector('[data-field="site_ref"]').value.trim(),
+      status: root.querySelector('[data-field="status"]').value,
+    });
+  }
+
+  function updateUserPrinterStatus(button, gatewayId) {
+    const root = button.closest('[data-user-action-form="update-printer-status"]');
+    edmpPortalAction(`/api/v1/printing/gateways/${gatewayId}/heartbeat`, {
+      status: root.querySelector('[data-field="status"]').value,
+    });
+  }
+
+  function applyTemplatePreset(select) {
+    const root = select.closest('[data-user-action-form="create-template"]');
+    const preset = select.value;
+    if (preset === "zebra-qr") {
+      root.querySelector('[data-field="name"]').value = "Zebra QR Label";
+      root.querySelector('[data-field="template_ref"]').value = "zebra/qr-default";
+      root.querySelector('[data-field="output_format"]').value = "zpl";
+      root.querySelector('[data-field="content"]').value = "^XA^FO40,40^BQN,2,6^FDQA,[[content]]^FS^XZ";
+      root.querySelector('[data-field="sample_payload"]').value = JSON.stringify({"content":"SAMPLE-001"});
+      const testRoot = document.querySelector('[data-user-action-form="test-print"]');
+      if (testRoot) {
+        testRoot.querySelector('[data-field="label_suffixes"]').value = "base,BLD-6mls,BLD-4mls,BLD-2mls,PLM1,PLM2,BLD-RNA,NA1,NA2";
+      }
+      return;
+    }
+    if (preset === "a4-qr-38x21-2") {
+      root.querySelector('[data-field="name"]').value = "A4 QR 38x21.2mm";
+      root.querySelector('[data-field="template_ref"]').value = "a4/qr-38x21-2";
+      root.querySelector('[data-field="output_format"]').value = "pdf";
+      root.querySelector('[data-field="content"]').value = "QR: [[content]]";
+      root.querySelector('[data-field="sample_payload"]').value = JSON.stringify({"content":"SAMPLE-001"});
+    }
+  }
+
+  document.querySelectorAll('[data-field="preset"]').forEach((item) => {
+    item.addEventListener("change", () => applyTemplatePreset(item));
+  });
+  document.querySelectorAll('[data-user-action-form="test-print"] [data-field="template_id"]').forEach((item) => {
+    item.addEventListener("change", () => applySelectedPrintTemplate(item));
+  });
+</script>
+{% endblock %}

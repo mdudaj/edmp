@@ -1,0 +1,56 @@
+{% extends base_template %}
+{% block title %}Operations Dashboard{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div>
+    <h1>Operations Dashboard</h1>
+    <p class="muted">Summary-first view with quick links into active work queues.</p>
+  </div>
+  <form method="get" class="right" aria-label="Project filter">
+    <input class="input" type="text" name="project_id" placeholder="Project ID" value="{{ project_id }}">
+    <button class="button" type="submit">Filter</button>
+    <a class="button secondary" href="/ui/operations/dashboard">Clear</a>
+  </form>
+</div>
+<div class="cards">
+  <div class="card">
+    <h3>Stewardship</h3>
+    {% for status, count in payload.cards.stewardship.items %}
+      <div><span class="chip">{{ status }}</span><strong>{{ count }}</strong></div>
+    {% endfor %}
+    <p><a href="/ui/operations/stewardship">Open workbench →</a></p>
+  </div>
+  <div class="card">
+    <h3>Workflow</h3>
+    {% for status, count in payload.cards.workflow.items %}
+      <div><span class="chip">{{ status }}</span><strong>{{ count }}</strong></div>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <h3>Orchestration</h3>
+    {% for status, count in payload.cards.orchestration.items %}
+      <div><span class="chip">{{ status }}</span><strong>{{ count }}</strong></div>
+    {% endfor %}
+    <p><a href="/ui/operations/orchestration">Open monitor →</a></p>
+  </div>
+  <div class="card">
+    <h3>Agents</h3>
+    {% for status, count in payload.cards.agent.items %}
+      <div><span class="chip">{{ status }}</span><strong>{{ count }}</strong></div>
+    {% endfor %}
+    <p><a href="/ui/operations/agent">Open agent monitor →</a></p>
+  </div>
+  <div class="card">
+    <h3>Printing jobs</h3>
+    {% for status, count in payload.cards.printing.jobs.items %}
+      <div><span class="chip">{{ status }}</span><strong>{{ count }}</strong></div>
+    {% endfor %}
+    <h3>Gateways</h3>
+    {% for status, count in payload.cards.printing.gateways.items %}
+      <div><span class="chip">{{ status }}</span><strong>{{ count }}</strong></div>
+    {% endfor %}
+    <div><span class="chip">templates</span><strong>{{ payload.cards.printing.templates }}</strong></div>
+    <p><a href="/ui/operations/printing">Open printing monitor →</a></p>
+  </div>
+</div>
+{% endblock %}

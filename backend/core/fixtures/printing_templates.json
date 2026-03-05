@@ -1,0 +1,50 @@
+[
+  {
+    "model": "core.printtemplate",
+    "pk": "b0f684f0-69f7-4b8e-95f4-b500e18fbab1",
+    "fields": {
+      "name": "Zebra QR Label (9-pack ready)",
+      "template_ref": "zebra/participant-batch",
+      "output_format": "zpl",
+      "content": "^XA^FO40,40^BQN,2,6^FDQA,[[label]]^FS^FO40,200^A0N,28,28^FD[[label]]^FS^XZ",
+      "sample_payload": {
+        "participant_prefix": "MLTP2-MBY-KWJ-",
+        "range_start": 1,
+        "range_end": 1,
+        "serial_position": "after_prefix",
+        "label_suffixes": [
+          "base",
+          "BLD-6mls",
+          "BLD-4mls",
+          "BLD-2mls",
+          "PLM1",
+          "PLM2",
+          "BLD-RNA",
+          "NA1",
+          "NA2"
+        ]
+      },
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "core.printtemplate",
+    "pk": "7b460fed-b28b-45b1-a70b-36860f70895e",
+    "fields": {
+      "name": "A4 QR Sheet 65-up (38.1x21.2mm)",
+      "template_ref": "a4/65-up",
+      "output_format": "pdf",
+      "content": "QR [[content]]",
+      "sample_payload": {
+        "labels": [
+          "MLTP2-MBY-KWJ-001"
+        ],
+        "pdf_sheet_preset": "a4-38x21.2",
+        "batch_count": 5
+      },
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  }
+]

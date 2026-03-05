@@ -154,3 +154,16 @@ To enable UI implementation with a stable backend contract, EDMP now provides UI
   * supports optional `project_id` filtering
 
 This keeps UI rendering concerns decoupled from domain mutation APIs while preserving server-side role enforcement.
+
+## django-material implementation baseline (new)
+
+To deliver modern SaaS-style operations screens (Slack/Google Drive-like density and navigation) without replacing the backend API contract:
+
+* Keep existing `/api/v1/ui/operations/*` endpoints as the source of truth.
+* Add server-rendered HTML routes under `/ui/operations/*` that consume the same payloads.
+* Use `django-material` as an optional presentation layer (`EDMP_UI_MATERIAL_ENABLED=true`) with a safe fallback template for environments where the package is not enabled.
+* Enforce the same role checks and tenant isolation on HTML routes as API routes.
+* Include modern UX baselines by default: summary-first cards, filter toolbars, accessible skip-link/focus behavior, and responsive navigation.
+* Provide inline action controls for operational transitions and show consistent success/error feedback banners after action execution.
+
+This enables incremental rollout: API-first remains stable while UI pages mature independently.
