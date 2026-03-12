@@ -72,6 +72,7 @@
         font-weight: 800;
         flex: 0 0 auto;
       }
+      .account-caption { margin: 0 0 2px; color: #dbeafe; font-size: 12px; font-weight: 700; }
       .account-name { margin: 0 0 2px; font-weight: 700; color: #fff; }
       .account-meta { margin: 0; color: #bfdbfe; font-size: 12px; }
       .brand-lockup { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
@@ -239,8 +240,9 @@
         box-shadow: none;
         outline: none;
       }
-      .button { border: 1px solid var(--color-primary); color: #fff; background: linear-gradient(180deg, #1370c8 0%, var(--color-primary) 100%); border-radius: 12px; padding: 8px 12px; text-decoration: none; font-size: 14px; display: inline-block; font-weight: 600; }
+      .button { border: 1px solid var(--color-primary); color: #fff; background: linear-gradient(180deg, #1370c8 0%, var(--color-primary) 100%); border-radius: 12px; padding: 8px 12px; text-decoration: none; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; line-height: 1.2; }
       .button.secondary { background: #fff; color: var(--color-primary); }
+      .button-icon { font-size: 18px; line-height: 1; }
       .chip { display: inline-block; border-radius: 999px; background: #e0efff; color: var(--color-primary-strong); padding: 3px 9px; font-size: 12px; margin-right: 4px; font-weight: 600; }
       .actions { display: flex; flex-wrap: wrap; gap: 6px; }
       .banner { border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; border: 1px solid; }
@@ -324,12 +326,13 @@
     <a href="#main-content" class="skip-link">Skip to content</a>
     <div class="layout" data-sidebar-collapsed="false" data-ui-shell="operations">
       <aside class="sidebar">
-        <div class="sidebar-account">
-          <div class="avatar">{{ user_context.user_id|slice:":2"|upper }}</div>
-          <div class="sidebar-account-copy">
-            <p class="account-name">{{ user_context.user_id }}</p>
-            <p class="account-meta">{{ user_context.tenant_schema }}{% if user_context.roles %} · {{ user_context.roles|join:", " }}{% endif %}</p>
-          </div>
+          <div class="sidebar-account">
+            <div class="avatar">{{ user_context.user_id|slice:":2"|upper }}</div>
+            <div class="sidebar-account-copy">
+              <p class="account-caption">Signed in as:</p>
+              <p class="account-name">{{ user_context.user_id }}</p>
+              <p class="account-meta">{{ user_context.tenant_schema }}{% if user_context.roles %} · {{ user_context.roles|join:", " }}{% endif %}</p>
+            </div>
         </div>
         <div class="brand-lockup">
           <div class="brand-mark">ED</div>

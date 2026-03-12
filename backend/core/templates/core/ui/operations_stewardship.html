@@ -27,7 +27,7 @@
         {% endfor %}
       </select>
     </label>
-    <button class="button" type="submit">Apply</button>
+    <button class="button" type="submit"><span class="material-symbols-outlined button-icon" aria-hidden="true">filter_alt</span><span>Apply</span></button>
     <a class="button secondary" href="/ui/operations/stewardship">Clear</a>
   </form>
 </div>
@@ -77,11 +77,12 @@
             </div>
             <div class="button-row">
               <button
-                class="button secondary"
+                class="button"
                 data-ui-action="stewardship"
                 onclick="submitStewardshipAction(this, '{{ item.id }}')"
               >
-                Run
+                <span class="material-symbols-outlined button-icon" aria-hidden="true">fact_check</span>
+                <span>Run</span>
               </button>
             </div>
           </div>

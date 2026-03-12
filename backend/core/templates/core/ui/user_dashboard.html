@@ -55,7 +55,7 @@
     </div>
     <label class="field-group"><span class="field-label">Labels list</span><textarea class="input" data-field="labels_input" placeholder="labels (optional, one per line)" aria-label="Labels list" style="min-height:96px;"></textarea></label>
     <label class="field-group"><span class="field-label">Payload JSON</span><input class="input" data-field="payload" placeholder='payload JSON (optional)' aria-label="Payload JSON"></label>
-    <div class="button-row"><button class="button" data-user-action="test-print" onclick="submitUserTestPrint(this)">Print</button></div>
+    <div class="button-row"><button class="button" data-user-action="test-print" onclick="submitUserTestPrint(this)"><span class="material-symbols-outlined button-icon" aria-hidden="true">print</span><span>Print</span></button></div>
   </div>
   <p class="form-hint">Default batch: 9 Zebra labels per participant. For A4 PDF, set row batch count (e.g. 5) to repeat each label across a full row.</p>
   {% else %}
@@ -88,8 +88,8 @@
     <label class="field-group"><span class="field-label">Template content</span><input class="input" data-field="content" placeholder="Template content (supports [[variable]])" aria-label="Template content"></label>
     <label class="field-group"><span class="field-label">Sample payload JSON</span><input class="input" data-field="sample_payload" placeholder='sample payload JSON (optional)' aria-label="Sample payload JSON"></label>
     <div class="button-row">
-      <button class="button" data-user-action="template-preview" onclick="previewUserTemplate(this)">Preview</button>
-      <button class="button" data-user-action="create-template" onclick="createUserTemplate(this)">Create</button>
+      <button class="button secondary" data-user-action="template-preview" onclick="previewUserTemplate(this)"><span class="material-symbols-outlined button-icon" aria-hidden="true">preview</span><span>Preview</span></button>
+      <button class="button" data-user-action="create-template" onclick="createUserTemplate(this)"><span class="material-symbols-outlined button-icon" aria-hidden="true">note_add</span><span>Create</span></button>
     </div>
   </div>
   <pre class="muted" data-field="preview-output" style="margin-top:8px;white-space:pre-wrap"></pre>
@@ -115,7 +115,7 @@
         <option value="degraded">degraded</option>
       </select></label>
     </div>
-    <div class="button-row"><button class="button" data-user-action="create-printer" onclick="createUserPrinter(this)">Add printer</button></div>
+    <div class="button-row"><button class="button" data-user-action="create-printer" onclick="createUserPrinter(this)"><span class="material-symbols-outlined button-icon" aria-hidden="true">print_connect</span><span>Add printer</span></button></div>
   </div>
   <div class="table-wrap"><table style="margin-top: 10px;">
     <thead>
@@ -139,7 +139,7 @@
               <option value="offline" {% if gateway.status == 'offline' %}selected{% endif %}>offline</option>
               <option value="degraded" {% if gateway.status == 'degraded' %}selected{% endif %}>degraded</option>
             </select></label>
-            <div class="button-row"><button class="button" data-user-action="printer-status-update" onclick="updateUserPrinterStatus(this, '{{ gateway.id }}')">Save</button></div>
+            <div class="button-row"><button class="button" data-user-action="printer-status-update" onclick="updateUserPrinterStatus(this, '{{ gateway.id }}')"><span class="material-symbols-outlined button-icon" aria-hidden="true">sync</span><span>Save</span></button></div>
           </div>
         </td>
       </tr>

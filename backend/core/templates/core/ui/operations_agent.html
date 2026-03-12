@@ -13,7 +13,7 @@
       <span class="field-label">Project ID</span>
       <input class="input" type="text" name="project_id" placeholder="Project ID" value="{{ project_id }}">
     </label>
-    <button class="button" type="submit">Filter</button>
+    <button class="button" type="submit"><span class="material-symbols-outlined button-icon" aria-hidden="true">filter_alt</span><span>Filter</span></button>
     <a class="button secondary" href="/ui/operations/agent">Clear</a>
   </form>
 </div>
@@ -59,11 +59,12 @@
           </div>
           <div class="button-row">
             <button
-              class="button secondary"
+              class="button"
               data-ui-action="agent"
               onclick="submitAgentAction(this, '{{ run.id }}')"
             >
-              Run
+              <span class="material-symbols-outlined button-icon" aria-hidden="true">smart_toy</span>
+              <span>Run</span>
             </button>
           </div>
         </div>

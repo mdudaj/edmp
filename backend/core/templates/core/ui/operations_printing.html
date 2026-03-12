@@ -27,7 +27,7 @@
         {% endfor %}
       </select>
     </label>
-    <button class="button" type="submit">Apply</button>
+    <button class="button" type="submit"><span class="material-symbols-outlined button-icon" aria-hidden="true">filter_alt</span><span>Apply</span></button>
     <a class="button secondary" href="/ui/operations/printing">Clear</a>
   </form>
 </div>
@@ -76,7 +76,7 @@
       <label class="field-group"><span class="field-label">Sample payload JSON</span><input class="input" data-field="sample_payload" placeholder='sample payload JSON' aria-label="Sample payload JSON"></label>
     </div>
     <div class="button-row">
-      <button class="button secondary" data-ui-action="print-template-create" onclick="createPrintTemplate(this)">Save template</button>
+      <button class="button" data-ui-action="print-template-create" onclick="createPrintTemplate(this)"><span class="material-symbols-outlined button-icon" aria-hidden="true">note_add</span><span>Save template</span></button>
     </div>
   </div>
 </section>
@@ -103,7 +103,7 @@
     <label class="field-group"><span class="field-label">Payload JSON</span><input class="input" data-field="payload" placeholder='payload JSON (optional; defaults to template sample)' aria-label="Payload JSON"></label>
     <p class="form-hint">Leave payload blank to reuse the selected template sample payload.</p>
     <div class="button-row">
-      <button class="button secondary" data-ui-action="print-job-test" onclick="createTestPrintJob(this)">Submit test</button>
+      <button class="button" data-ui-action="print-job-test" onclick="createTestPrintJob(this)"><span class="material-symbols-outlined button-icon" aria-hidden="true">print</span><span>Submit test</span></button>
     </div>
   </div>
 </section>
@@ -132,7 +132,7 @@
       <label class="field-group"><span class="field-label">Capabilities JSON</span><input class="input" data-field="capabilities" placeholder='capabilities JSON array (optional)' aria-label="Capabilities JSON"></label>
     </div>
     <div class="button-row">
-      <button class="button secondary" data-ui-action="print-gateway-create" onclick="createPrintGateway(this)">Save printer</button>
+      <button class="button" data-ui-action="print-gateway-create" onclick="createPrintGateway(this)"><span class="material-symbols-outlined button-icon" aria-hidden="true">print_connect</span><span>Save printer</span></button>
     </div>
   </div>
 </section>
@@ -213,11 +213,12 @@
           </div>
           <div class="button-row">
             <button
-              class="button secondary"
+              class="button"
               data-ui-action="print-job"
               onclick="submitPrintJobAction(this, '{{ job.id }}')"
             >
-              Run
+              <span class="material-symbols-outlined button-icon" aria-hidden="true">print</span>
+              <span>Run</span>
             </button>
           </div>
         </div>
@@ -276,11 +277,12 @@
           </div>
           <div class="button-row">
             <button
-              class="button secondary"
+              class="button"
               data-ui-action="print-gateway"
               onclick="submitPrintGatewayHeartbeat(this, '{{ gateway.id }}')"
             >
-              Heartbeat
+              <span class="material-symbols-outlined button-icon" aria-hidden="true">sync</span>
+              <span>Heartbeat</span>
             </button>
           </div>
         </div>
