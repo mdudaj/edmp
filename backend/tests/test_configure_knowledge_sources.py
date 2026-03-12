@@ -95,6 +95,15 @@ def test_generate_content_creates_cookbook_sample_and_theme_skills(tmp_path):
     forms_dir = source_root / "cookbook" / "forms101" / "forms"
     forms_dir.mkdir(parents=True)
     (forms_dir / "bank_form.py").write_text("class BankForm:\n    layout = Layout()", encoding="utf-8")
+    (forms_dir / "viewset.py").write_text("class Forms(Application): ...\ngeneric.FormView.as_view(template_name='forms/form.html')", encoding="utf-8")
+    (forms_dir / "views.py").write_text("class CheckoutFormView(generic.FormView): ...\nclass CreateUserView(generic.CreateView): ...", encoding="utf-8")
+    (forms_dir / "order_form.py").write_text("class OrderForm:\n    name = forms.CharField(widget=forms.TextInput(attrs={'leading-icon': 'account_box'}))", encoding="utf-8")
+    (forms_dir / "templates" / "forms").mkdir(parents=True)
+    (forms_dir / "templates" / "forms" / "form.html").write_text("{% render form form.layout %}", encoding="utf-8")
+    custom_widget_dir = source_root / "cookbook" / "forms101" / "custom_widget"
+    custom_widget_dir.mkdir(parents=True)
+    (custom_widget_dir / "forms.py").write_text("class EmailForm:\n    layout = Layout()\nclass OrderForm:\n    total = forms.CharField(widget=forms.TextInput(attrs={'leading-icon': 'attach_money'}))", encoding="utf-8")
+    (custom_widget_dir / "viewset.py").write_text("class OrderViewset(ModelViewset): ...", encoding="utf-8")
 
     patterns_dir = source_root / "cookbook" / "patterns" / "config"
     patterns_dir.mkdir(parents=True)
@@ -125,6 +134,8 @@ def test_generate_content_creates_cookbook_sample_and_theme_skills(tmp_path):
     (material_dir / "material" / "templates" / "cotton" / "forms" / "text" / "outlined.html").write_text("<input placeholder=' ' data-input />", encoding="utf-8")
     (material_dir / "material" / "templates" / "cotton" / "forms" / "select").mkdir(parents=True)
     (material_dir / "material" / "templates" / "cotton" / "forms" / "select" / "outlined.html").write_text("<input up-select-trigger />", encoding="utf-8")
+    (material_dir / "material" / "templates" / "cotton" / "forms" / "calendar").mkdir(parents=True)
+    (material_dir / "material" / "templates" / "cotton" / "forms" / "calendar" / "date.html").write_text("<input data-trailing-button />", encoding="utf-8")
     (material_dir / "material" / "templates" / "cotton" / "button").mkdir(parents=True)
     (material_dir / "material" / "templates" / "cotton" / "button" / "filled.html").write_text("<button up-ripple>{{ slot }}</button>", encoding="utf-8")
     (material_dir / "material" / "templates" / "cotton" / "button" / "fab.html").write_text("<button class='rounded-full'>+</button>", encoding="utf-8")
@@ -140,6 +151,7 @@ def test_generate_content_creates_cookbook_sample_and_theme_skills(tmp_path):
     assert "knowledge-src/viewflow-workflow-orchestration" in entry_ids
     assert "knowledge-src/viewflow-fsm-state-transitions" in entry_ids
     assert "knowledge-src/django-material-frontend-composition" in entry_ids
+    assert "knowledge-src/viewflow-view-recipes" in entry_ids
     assert "knowledge-src/viewflow-forms-layout-composition" in entry_ids
     assert "knowledge-src/viewflow-crud-scaffolding" in entry_ids
     assert "knowledge-src/viewflow-auth-account-scaffolding" in entry_ids
@@ -169,10 +181,21 @@ def test_generate_content_creates_cookbook_sample_and_theme_skills(tmp_path):
     assert "Rapid agentic UI metadata" in frontend_skill.read_text(encoding="utf-8")
     assert "Outlined text field component" in frontend_skill.read_text(encoding="utf-8")
     assert "Workflow task views using built-in workflow templates" in frontend_skill.read_text(encoding="utf-8")
+    assert "Input adornment recipe" in frontend_skill.read_text(encoding="utf-8")
+    assert "Custom widget forms with leading-icon attrs and computed tags" in frontend_skill.read_text(encoding="utf-8")
 
     forms_skill = content_root / "knowledge-src" / "skills" / "viewflow-forms-layout-composition" / "SKILL.md"
     assert forms_skill.exists()
     assert "FieldSet" in forms_skill.read_text(encoding="utf-8")
+    assert "FormView registration inside an Application" in forms_skill.read_text(encoding="utf-8")
+    assert "Leading-icon and custom widget attribute examples" in forms_skill.read_text(encoding="utf-8")
+
+    view_recipes_skill = content_root / "knowledge-src" / "skills" / "viewflow-view-recipes" / "SKILL.md"
+    assert view_recipes_skill.exists()
+    assert "DetailViewMixin" in view_recipes_skill.read_text(encoding="utf-8")
+    assert "DeleteViewMixin" in view_recipes_skill.read_text(encoding="utf-8")
+    assert "Application-mounted FormView and CreateView routes with titles/buttons" in view_recipes_skill.read_text(encoding="utf-8")
+    assert "Shared form template with render form form.layout and action footer" in view_recipes_skill.read_text(encoding="utf-8")
 
     auth_skill = content_root / "knowledge-src" / "skills" / "viewflow-auth-account-scaffolding" / "SKILL.md"
     assert auth_skill.exists()

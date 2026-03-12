@@ -617,7 +617,11 @@ def generate_domain_skill_entries(source_root: Path, content_root: Path) -> list
                     "body": """
 - CRUD page recipe: register a `ModelViewset`, configure `list_columns` and `form_layout`, mount it into an `Application`, and let `Site(...)` supply navigation and shell chrome.
 - Workflow page recipe: keep workflow-specific forms in `StartView`/`UpdateView` classes or workflow task views and reuse `viewflow/workflow/start.html` or `viewflow/workflow/task.html` rather than inventing a new shell.
+- Detail page recipe: add `DetailViewMixin` when an object needs a dedicated read screen, then drive page/object actions from the viewset instead of hand-wiring template links.
+- Delete page recipe: add `DeleteViewMixin` when users need single-object delete confirmation or list bulk delete actions from the stock shell.
+- Form page recipe: mount `generic.FormView` or `generic.CreateView` inside an `Application` with `template_name="forms/form.html"` or `viewflow/views/form.html`, then keep titles/buttons in `extra_context`.
 - Field recipe: prefer outlined text/select patterns with floating labels, placeholder-free inputs, help text, and explicit error state wiring.
+- Input adornment recipe: use widget attrs and component props for `leading-icon`, `trailing_icon`, `trailing_button`, or `trailing_link` rather than custom input wrappers.
 - Primary action recipe: use filled buttons for main submit actions and icon FABs for context-specific creation/launch actions.
 - Card recipe: use elevated cards with title, subtitle, content slot, and footer slot to package forms and table sections.
 - Theme recipe: prefer blue `primary` tokens, `surface`/`surface-container-*` backgrounds, and `on-surface-variant` text for supporting labels and hints.
@@ -680,6 +684,35 @@ def generate_domain_skill_entries(source_root: Path, content_root: Path) -> list
                             "end_line": 35,
                             "label": "Elevated card component",
                         },
+                        {
+                            "path": "django-material/material/templates/cotton/forms/calendar/date.html",
+                            "start_line": 1,
+                            "end_line": 40,
+                            "label": "Trailing button input pattern",
+                        },
+                    ],
+                },
+                {
+                    "title": "Cookbook widget and icon patterns",
+                    "sources": [
+                        {
+                            "path": "cookbook/forms101/custom_widget/forms.py",
+                            "start_line": 15,
+                            "end_line": 72,
+                            "label": "Custom widget forms with leading-icon attrs and computed tags",
+                        },
+                        {
+                            "path": "cookbook/forms101/forms/order_form.py",
+                            "start_line": 1,
+                            "end_line": 48,
+                            "label": "Cookbook order form with leading-icon text inputs",
+                        },
+                        {
+                            "path": "django-material/demo/templates/demo/widgets.html",
+                            "start_line": 1,
+                            "end_line": 31,
+                            "label": "Widget demo page using nav icons, elevated card, and filled button",
+                        },
                     ],
                 },
                 {
@@ -724,6 +757,121 @@ def generate_domain_skill_entries(source_root: Path, content_root: Path) -> list
             ],
         },
         {
+            "entry_id": "knowledge-src/viewflow-view-recipes",
+            "name": "viewflow-view-recipes",
+            "description": "Concrete recipes for list, detail, delete, create/update, and generic form views using Viewflow scaffolding and cookbook examples.",
+            "tags": [
+                "viewflow",
+                "views",
+                "list",
+                "detail",
+                "delete",
+                "formview",
+                "crud",
+                "local",
+                "knowledge-src",
+            ],
+            "requires": ["viewflow/viewflow/urls/model.py"],
+            "sections": [
+                {
+                    "title": "Architecture rules",
+                    "body": """
+- Prefer `ModelViewset` for the default list/create/update flow; add `DetailViewMixin` and `DeleteViewMixin` explicitly when the specification calls for dedicated detail or delete confirmation pages.
+- Keep list/detail/delete/create/update behavior on the viewset through `list_columns`, `list_filter_fields`, `form_layout`, `form_class`, `form_widgets`, `urlpatterns`, and page-action hooks before forking templates.
+- For non-model forms, mount `generic.FormView` or `generic.CreateView` inside an `Application` and reuse a shared form template such as `forms/form.html` so agents only provide the form, title, button text, and success URL.
+- Let the stock template fallback chain work first: `<app>/<model>_list.html`, `<app>/<model>_detail.html`, `<app>/<model>_form.html`, `<app>/<model>_delete.html`, then `viewflow/views/*.html`.
+- Use Material icons on the viewset (`Icon("group_work")`, `Icon("engineering")`, etc.) so list navigation, object actions, and app menus stay visually consistent.
+""".strip(),
+                },
+                {
+                    "title": "Viewset mixin APIs",
+                    "sources": [
+                        {
+                            "path": "viewflow/viewflow/urls/model.py",
+                            "start_line": 107,
+                            "end_line": 358,
+                            "label": "CreateViewMixin, UpdateViewMixin, DeleteViewMixin, DetailViewMixin, and ReadonlyModelViewset",
+                        },
+                    ],
+                },
+                {
+                    "title": "Underlying view classes",
+                    "sources": [
+                        {
+                            "path": "viewflow/viewflow/views/list.py",
+                            "start_line": 309,
+                            "end_line": 454,
+                            "label": "ListModelView columns, object links, actions, and template resolution",
+                        },
+                        {
+                            "path": "viewflow/viewflow/views/create.py",
+                            "start_line": 25,
+                            "end_line": 126,
+                            "label": "CreateModelView form-class, widgets, messages, and template fallback",
+                        },
+                        {
+                            "path": "viewflow/viewflow/views/update.py",
+                            "start_line": 26,
+                            "end_line": 145,
+                            "label": "UpdateModelView form/layout overrides and page actions",
+                        },
+                        {
+                            "path": "viewflow/viewflow/views/detail.py",
+                            "start_line": 18,
+                            "end_line": 97,
+                            "label": "DetailModelView object data, actions, and template fallback",
+                        },
+                        {
+                            "path": "viewflow/viewflow/views/delete.py",
+                            "start_line": 23,
+                            "end_line": 95,
+                            "label": "DeleteModelView confirmation flow and success messaging",
+                        },
+                    ],
+                },
+                {
+                    "title": "Cookbook CRUD recipes",
+                    "sources": [
+                        {
+                            "path": "cookbook/crud101/staff/viewset.py",
+                            "start_line": 12,
+                            "end_line": 88,
+                            "label": "Department and employee viewsets with DetailViewMixin and custom urlpatterns",
+                        },
+                        {
+                            "path": "cookbook/crud101/atlas/viewset.py",
+                            "start_line": 17,
+                            "end_line": 207,
+                            "label": "Atlas CRUD app with DetailViewMixin, DeleteViewMixin, readonly viewsets, icons, and layouts",
+                        },
+                    ],
+                },
+                {
+                    "title": "Cookbook FormView recipes",
+                    "sources": [
+                        {
+                            "path": "cookbook/forms101/forms/viewset.py",
+                            "start_line": 23,
+                            "end_line": 153,
+                            "label": "Application-mounted FormView and CreateView routes with titles/buttons",
+                        },
+                        {
+                            "path": "cookbook/forms101/forms/views.py",
+                            "start_line": 10,
+                            "end_line": 106,
+                            "label": "Checkout FormView options endpoint and CreateUserView mixin composition",
+                        },
+                        {
+                            "path": "cookbook/forms101/forms/templates/forms/form.html",
+                            "start_line": 1,
+                            "end_line": 50,
+                            "label": "Shared form template with render form form.layout and action footer",
+                        },
+                    ],
+                },
+            ],
+        },
+        {
             "entry_id": "knowledge-src/viewflow-forms-layout-composition",
             "name": "viewflow-forms-layout-composition",
             "description": "Layout-driven form composition with Viewflow forms and cookbook examples.",
@@ -745,6 +893,8 @@ def generate_domain_skill_entries(source_root: Path, content_root: Path) -> list
 - Keep form structure declarative on the form or viewset so create/update screens can reuse the same composition logic.
 - Use responsive span sizing when field density matters; use `FieldSet` for semantic grouping and readable forms.
 - Prefer widget configuration and layout composition over per-form template overrides.
+- When the screen is a standalone form workflow rather than CRUD, mount the form through `generic.FormView.as_view(...)` inside an `Application` and reuse one shared form template.
+- Compose input affordances through widget attrs such as `leading-icon` and through component trailing actions before writing custom field HTML.
 """.strip(),
                 },
                 {
@@ -766,6 +916,18 @@ def generate_domain_skill_entries(source_root: Path, content_root: Path) -> list
                             "start_line": 1,
                             "end_line": 193,
                             "label": "Large multi-section bank form with FieldSet, Row, Column, and Span",
+                        },
+                        {
+                            "path": "cookbook/forms101/forms/viewset.py",
+                            "start_line": 23,
+                            "end_line": 153,
+                            "label": "FormView registration inside an Application",
+                        },
+                        {
+                            "path": "cookbook/forms101/custom_widget/forms.py",
+                            "start_line": 15,
+                            "end_line": 72,
+                            "label": "Leading-icon and custom widget attribute examples",
                         },
                     ],
                 },
