@@ -49,6 +49,30 @@ def test_generate_content_creates_cookbook_sample_and_theme_skills(tmp_path):
     source_root = tmp_path / "knowledge-src"
     content_root = tmp_path / "content"
 
+    viewflow_dir = source_root / "viewflow"
+    viewflow_dir.mkdir(parents=True)
+    (viewflow_dir / "README.md").write_text("# Viewflow\n\nWorkflow docs", encoding="utf-8")
+    (viewflow_dir / "package.json").write_text(json.dumps({"version": "2.2.15"}), encoding="utf-8")
+    (viewflow_dir / "viewflow" / "urls").mkdir(parents=True)
+    (viewflow_dir / "viewflow" / "urls" / "sites.py").write_text("class Site: ...\nclass Application: ...", encoding="utf-8")
+    (viewflow_dir / "viewflow" / "urls" / "model.py").write_text("class ModelViewset: ...", encoding="utf-8")
+    (viewflow_dir / "viewflow" / "workflow" / "flow").mkdir(parents=True)
+    (viewflow_dir / "viewflow" / "workflow" / "base.py").write_text("class Node: ...", encoding="utf-8")
+    (viewflow_dir / "viewflow" / "workflow" / "activation.py").write_text("class Activation: ...", encoding="utf-8")
+    (viewflow_dir / "viewflow" / "workflow" / "flow" / "nodes.py").write_text("class Start: ...\nclass View: ...\nclass Split: ...\nclass Join: ...", encoding="utf-8")
+    (viewflow_dir / "viewflow" / "forms").mkdir(parents=True)
+    (viewflow_dir / "viewflow" / "forms" / "renderers.py").write_text("class WidgetRenderer: ...", encoding="utf-8")
+    (viewflow_dir / "viewflow" / "fsm").mkdir(parents=True)
+    (viewflow_dir / "viewflow" / "fsm" / "base.py").write_text("class Transition: ...", encoding="utf-8")
+    (viewflow_dir / "viewflow" / "fsm" / "viewset.py").write_text("class FlowViewsMixin: ...", encoding="utf-8")
+    (viewflow_dir / "viewflow" / "contrib").mkdir(parents=True)
+    (viewflow_dir / "viewflow" / "contrib" / "auth.py").write_text("class AuthenticationForm: ...\nclass AuthViewset: ...", encoding="utf-8")
+    (viewflow_dir / "tests" / "workflow").mkdir(parents=True)
+    (viewflow_dir / "tests" / "workflow" / "test_flow_viewset__workflow.py").write_text("class TestWorkflowViewestFlow: ...", encoding="utf-8")
+    (viewflow_dir / "tests" / "workflow" / "test_managers_perms.py").write_text("class StaffOnlyFlow: ...", encoding="utf-8")
+    (viewflow_dir / "tests" / "fsm").mkdir(parents=True)
+    (viewflow_dir / "tests" / "fsm" / "test_fsm__permissions.py").write_text("class _Publication: ...", encoding="utf-8")
+
     crud_dir = source_root / "cookbook" / "crud101"
     crud_dir.mkdir(parents=True)
     (crud_dir / "README.md").write_text("# CRUD 101\n\nAdmin CRUD demo", encoding="utf-8")
@@ -56,6 +80,30 @@ def test_generate_content_creates_cookbook_sample_and_theme_skills(tmp_path):
     (crud_dir / "config" / "urls.py").write_text("site = Site(title='Demo')", encoding="utf-8")
     (crud_dir / "atlas").mkdir()
     (crud_dir / "atlas" / "viewset.py").write_text("class AtlasApp(Application): ...", encoding="utf-8")
+    (crud_dir / "staff").mkdir()
+    (crud_dir / "staff" / "viewset.py").write_text("class EmployeeViewset(ModelViewset): ...", encoding="utf-8")
+
+    workflow_dir = source_root / "cookbook" / "workflow101" / "shipment"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "flows.py").write_text("class ShipmentFlow(flow.Flow): ...", encoding="utf-8")
+
+    fsm_dir = source_root / "cookbook" / "fsm101" / "review"
+    fsm_dir.mkdir(parents=True)
+    (fsm_dir / "viewset.py").write_text("class ReviewViewset(FlowViewsMixin): ...", encoding="utf-8")
+
+    forms_dir = source_root / "cookbook" / "forms101" / "forms"
+    forms_dir.mkdir(parents=True)
+    (forms_dir / "bank_form.py").write_text("class BankForm:\n    layout = Layout()", encoding="utf-8")
+
+    patterns_dir = source_root / "cookbook" / "patterns" / "config"
+    patterns_dir.mkdir(parents=True)
+    (patterns_dir / "urls.py").write_text("site = Site(title='Workflow patterns')", encoding="utf-8")
+
+    dashboard_dir = source_root / "cookbook" / "dashboard"
+    (dashboard_dir / "config").mkdir(parents=True)
+    (dashboard_dir / "config" / "urls.py").write_text("site = Site(title='Dashboard')", encoding="utf-8")
+    (dashboard_dir / "oilngas").mkdir(parents=True)
+    (dashboard_dir / "oilngas" / "dashboard.py").write_text("dashboard = Dashboard(app_name='oilngas')", encoding="utf-8")
 
     material_dir = source_root / "django-material"
     material_dir.mkdir(parents=True)
@@ -64,6 +112,14 @@ def test_generate_content_creates_cookbook_sample_and_theme_skills(tmp_path):
     colors_dir = material_dir / "material" / "assets"
     colors_dir.mkdir(parents=True)
     (colors_dir / "colors.css").write_text("--color-primary: #0277bd;", encoding="utf-8")
+    (material_dir / "tests").mkdir(parents=True)
+    (material_dir / "tests" / "test_views_base.py").write_text("class FormLayoutMixinTests: ...", encoding="utf-8")
+    (material_dir / "tests" / "test_views_create.py").write_text("class CreateModelViewTests: ...", encoding="utf-8")
+    (material_dir / "demo" / "templates" / "demo").mkdir(parents=True)
+    (material_dir / "demo" / "templates" / "demo" / "showcases.html").write_text("{% extends 'material/base_page.html' %}", encoding="utf-8")
+    (material_dir / "demo" / "templates" / "demo" / "widgets.html").write_text("{% extends 'material/base_page.html' %}", encoding="utf-8")
+    (material_dir / "material" / "templates" / "cotton").mkdir(parents=True)
+    (material_dir / "material" / "templates" / "cotton" / "CLAUDE.md").write_text("# Cotton component guide", encoding="utf-8")
 
     generated = module.generate_content(source_root, content_root)
     entry_ids = {item["entry_id"] for item in generated}
@@ -71,6 +127,14 @@ def test_generate_content_creates_cookbook_sample_and_theme_skills(tmp_path):
     assert "knowledge-src/cookbook-crud101" in entry_ids
     assert "knowledge-src/django-material-theme-customization" in entry_ids
     assert "knowledge-src/crud-admin-shell-layout" in entry_ids
+    assert "knowledge-src/viewflow-workflow-orchestration" in entry_ids
+    assert "knowledge-src/viewflow-fsm-state-transitions" in entry_ids
+    assert "knowledge-src/django-material-frontend-composition" in entry_ids
+    assert "knowledge-src/viewflow-forms-layout-composition" in entry_ids
+    assert "knowledge-src/viewflow-crud-scaffolding" in entry_ids
+    assert "knowledge-src/viewflow-auth-account-scaffolding" in entry_ids
+    assert "knowledge-src/viewflow-dashboard-composition" in entry_ids
+    assert "knowledge-src/knowledge-source-maintenance" in entry_ids
     assert (content_root / "knowledge-src" / "skills" / "cookbook-crud101" / "SKILL.md").exists()
     assert (content_root / "knowledge-src" / "skills" / "django-material-theme-customization" / "SKILL.md").exists()
     admin_shell = content_root / "knowledge-src" / "skills" / "crud-admin-shell-layout" / "SKILL.md"
@@ -82,6 +146,29 @@ def test_generate_content_creates_cookbook_sample_and_theme_skills(tmp_path):
     assert "two topbar variants" in admin_shell.read_text(encoding="utf-8")
     assert "preserving a visible gap between the sidebar and the content column" in admin_shell.read_text(encoding="utf-8")
     assert "Choose a Material icon that matches the action context" in admin_shell.read_text(encoding="utf-8")
+
+    workflow_skill = content_root / "knowledge-src" / "skills" / "viewflow-workflow-orchestration" / "SKILL.md"
+    assert workflow_skill.exists()
+    assert "StartHandle" in workflow_skill.read_text(encoding="utf-8")
+    assert "Cookbook orchestration example" in workflow_skill.read_text(encoding="utf-8")
+
+    frontend_skill = content_root / "knowledge-src" / "skills" / "django-material-frontend-composition" / "SKILL.md"
+    assert frontend_skill.exists()
+    assert "cotton components" in frontend_skill.read_text(encoding="utf-8")
+    assert "base_page.html" in frontend_skill.read_text(encoding="utf-8")
+
+    forms_skill = content_root / "knowledge-src" / "skills" / "viewflow-forms-layout-composition" / "SKILL.md"
+    assert forms_skill.exists()
+    assert "FieldSet" in forms_skill.read_text(encoding="utf-8")
+
+    auth_skill = content_root / "knowledge-src" / "skills" / "viewflow-auth-account-scaffolding" / "SKILL.md"
+    assert auth_skill.exists()
+    assert "AuthViewset" in auth_skill.read_text(encoding="utf-8")
+
+    maintenance_skill = content_root / "knowledge-src" / "skills" / "knowledge-source-maintenance" / "SKILL.md"
+    assert maintenance_skill.exists()
+    assert "generate_domain_skill_entries" in maintenance_skill.read_text(encoding="utf-8")
+    assert "chub update" in maintenance_skill.read_text(encoding="utf-8")
 
 
 def test_generate_content_includes_cookbook_directory_without_readme(tmp_path):
